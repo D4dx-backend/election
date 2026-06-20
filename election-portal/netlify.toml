@@ -1,0 +1,75 @@
+[build]
+  command   = "vite build"
+  publish   = "dist/public"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# ── API proxy rules (mirrors the Express proxy in server/routes.ts) ──────────
+# These must come BEFORE the SPA catch-all redirect.
+
+[[redirects]]
+  from   = "/api/auth/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/auth/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/franchises/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/franchise/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/elections/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/election/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/election-groups/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/electionGroup/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/nominees/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/nominee/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/vote/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/vote/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/voter-groups/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/voterGroup/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/analytics/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/electionAnalytics/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/users/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/user/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/onboarding/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/onboarding/:splat"
+  status = 200
+  force  = true
+
+# ── SPA fallback — must be LAST ───────────────────────────────────────────────
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
