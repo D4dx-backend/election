@@ -17,9 +17,9 @@ const allowedOrigins = [
   "http://localhost:4000",
   "http://localhost:3001",
   "http://localhost:3002",
-  "https://dfms-admin-ekrsr.ondigitalocean.app",
-  "https://dfms.datahex.co",
-  "https://dfms-cms-la4gt.ondigitalocean.app",
+  ...(process.env.FRONTEND_URLS
+    ? process.env.FRONTEND_URLS.split(",").map((u) => u.trim()).filter(Boolean)
+    : []),
 ];
 
 //cors policy

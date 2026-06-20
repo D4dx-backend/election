@@ -1,4 +1,4 @@
-FROM bitnami/express:4.18.2
+FROM node:18-alpine
 
 WORKDIR /app
 COPY package*.json ./
