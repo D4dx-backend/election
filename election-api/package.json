@@ -1,0 +1,55 @@
+{
+  "name": "dfms",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.341.0",
+    "axios": "^1.6.2",
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^1.20.2",
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "ejs": "^3.1.9",
+    "express": "^4.21.2",
+    "ics": "^3.8.1",
+    "jsonwebtoken": "^9.0.0",
+    "jspdf": "^3.0.1",
+    "mime-types": "^2.1.35",
+    "moment": "^2.29.4",
+    "mongoose": "^7.1.0",
+    "multer": "^1.4.5-lts.1",
+    "nanoid": "^4.0.2",
+    "nodemailer": "^6.10.1",
+    "openai": "^4.19.0",
+    "pdfkit": "^0.17.1",
+    "punycode": "^2.3.1",
+    "qrcode": "^1.5.3",
+    "sharp": "^0.32.6",
+    "swagger-autogen": "^2.23.7",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.0",
+    "text-to-svg": "^3.1.5",
+    "uniqid": "^5.4.0"
+  },
+  "devDependencies": {
+    "case-sensitive-paths-webpack-plugin": "^2.4.0",
+    "nodemon": "^2.0.22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/datahex-in/dfms-backend.git"
+  },
+  "bugs": {
+    "url": "https://github.com/datahex-in/dfms-backend/issues"
+  },
+  "homepage": "https://github.com/datahex-in/dfms-backend#readme",
+  "description": "dfms"
+}

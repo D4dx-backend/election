@@ -1,0 +1,71 @@
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import { createProxyMiddleware, fixRequestBody } from "http-proxy-middleware";
+import cookieParser from "cookie-parser";
+import { json, urlencoded } from "express";
+
+const API_URL = process.env.VITE_API_URL || "http://localhost:8000";
+
+/**
+ * Maps portal /api/* routes to election-api /api/v1/* routes.
+ * The portal server is a thin proxy — no direct MongoDB connection needed.
+ *
+ * NOTE: When app.use("/api/auth", ...) mounts a middleware, Express strips the
+ * "/api/auth" prefix before the proxy sees the path. So pathRewrite must map
+ * the remaining path (e.g. "/login") to the full backend path.
+ */
+export async function registerRoutes(app: Express): Promise<Server> {
+  app.use(json());
+  app.use(urlencoded({ extended: true }));
+  app.use(cookieParser());
+
+  const makeProxy = (backendBasePath: string) =>
+    createProxyMiddleware({
+      target: API_URL,
+      changeOrigin: true,
+      // Express strips the mount prefix, so remaining path starts with "/"
+      // e.g. mounted at /api/auth → proxy sees /login → rewrite to /api/v1/auth/login
+      pathRewrite: (path) => `${backendBasePath}${path}`,
+      on: {
+        proxyReq: fixRequestBody,
+        error: (err: Error, _req: any, res: any) => {
+          console.error("Proxy error:", err.message);
+          res.status(502).json({ success: false, message: "Backend service unavailable" });
+        },
+      },
+    });
+
+  // Auth → /api/v1/auth
+  app.use("/api/auth", makeProxy("/api/v1/auth"));
+
+  // Franchises → /api/v1/franchise
+  app.use("/api/franchises", makeProxy("/api/v1/franchise"));
+
+  // Elections → /api/v1/election
+  app.use("/api/elections", makeProxy("/api/v1/election"));
+
+  // Election Groups → /api/v1/electionGroup
+  app.use("/api/election-groups", makeProxy("/api/v1/electionGroup"));
+
+  // Nominees → /api/v1/nominee
+  app.use("/api/nominees", makeProxy("/api/v1/nominee"));
+
+  // Vote → /api/v1/vote
+  app.use("/api/vote", makeProxy("/api/v1/vote"));
+
+  // Voter Groups → /api/v1/voterGroup
+  app.use("/api/voter-groups", makeProxy("/api/v1/voterGroup"));
+
+  // Analytics → /api/v1/electionAnalytics
+  app.use("/api/analytics", makeProxy("/api/v1/electionAnalytics"));
+
+  // Users → /api/v1/user
+  app.use("/api/users", makeProxy("/api/v1/user"));
+
+  // Onboarding → /api/v1/onboarding
+  app.use("/api/onboarding", makeProxy("/api/v1/onboarding"));
+
+  const httpServer = createServer(app);
+  return httpServer;
+}
+

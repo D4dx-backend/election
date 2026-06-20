@@ -1,0 +1,287 @@
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { MainLayout } from "@/components/layout/MainLayout";
+import { VoterBulkGenerator } from "@/components/voters/VoterBulkGenerator";
+import { VotersTable } from "@/components/voters/VotersTable";
+import { Button } from "@/components/ui/button";
+import { PlusIcon, Upload, AlertCircle } from "lucide-react";
+import { BulkVoterGenerationOptions, Pagination, User, Election, ElectionGroup } from "@/lib/types";
+import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+export default function Voters() {
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const [deleteVoterId, setDeleteVoterId] = useState<string | null>(null);
+  const { toast } = useToast();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedElectionId, setSelectedElectionId] = useState<string>("");
+  
+  // Construct the query string for pagination
+  const getVotersQueryString = () => {
+    const params = new URLSearchParams();
+    params.append('page', page.toString());
+    params.append('pageSize', pageSize.toString());
+    return `?${params.toString()}`;
+  };
+  
+  // Fetch voters with pagination
+  const { 
+    data: votersResponse, 
+    isLoading: votersLoading, 
+    isError: votersError,
+    refetch: refetchVoters
+  } = useQuery({
+    queryKey: ['/api/auth/voters' + getVotersQueryString(), selectedElectionId],
+    queryFn: async () => {
+      const params = new URLSearchParams(getVotersQueryString());
+      if (selectedElectionId) {
+        params.append('electionId', selectedElectionId);
+      }
+      const response = await apiRequest('GET', `/api/auth/voters?${params.toString()}`);
+      return response.json();
+    },
+    refetchOnWindowFocus: false
+  });
+
+  // Fetch elections for the bulk generator
+  const { 
+    data: allElections,
+    isLoading: electionsLoading,
+    isError: electionsError
+  } = useQuery({
+    queryKey: ['/api/elections'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/elections');
+      return response.json();
+    },
+    refetchOnWindowFocus: false
+  });
+  
+  // Fetch election groups for the bulk generator
+  const {
+    data: electionGroups,
+    isLoading: electionGroupsLoading,
+    isError: electionGroupsError
+  } = useQuery({
+    queryKey: ['/api/election-groups'],
+    refetchOnWindowFocus: false
+  });
+
+  // Mutation for generating voters in bulk
+  const generateVotersMutation = useMutation({
+    mutationFn: async (options: BulkVoterGenerationOptions) => {
+      const response = await apiRequest('POST', '/api/auth/voters/generate', options);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Voters generated",
+        description: `Successfully generated ${data.count} voter accounts`,
+      });
+      
+      // Invalidate and refetch voters
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/voters'] });
+    },
+    onError: (error) => {
+      toast({
+        title: "Generation failed",
+        description: `Failed to generate voters: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: "destructive"
+      });
+    }
+  });
+  
+  // Mutation for deleting a voter
+  const deleteVoterMutation = useMutation({
+    mutationFn: async (voterId: string) => {
+      await apiRequest('DELETE', `/api/auth/voters/${voterId}`);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Voter deleted",
+        description: "The voter has been successfully deleted"
+      });
+      
+      // Invalidate and refetch voters
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/voters'] });
+      
+      setDeleteVoterId(null);
+    },
+    onError: (error) => {
+      toast({
+        title: "Delete failed",
+        description: `Failed to delete voter: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: "destructive"
+      });
+      
+      setDeleteVoterId(null);
+    }
+  });
+
+  // Use data from API responses
+  const voters = votersResponse?.data || [];
+  const pagination = votersResponse?.pagination || {
+    page,
+    pageSize,
+    total: 0
+  };
+  const displayElections = allElections?.data || [];
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleGenerateVoters = (options: BulkVoterGenerationOptions) => {
+    generateVotersMutation.mutate(options);
+  };
+
+  const handleImportVoters = () => {
+    toast({
+      title: "Feature coming soon",
+      description: "The ability to import voters will be available soon",
+    });
+  };
+
+  const handleExportVoters = () => {
+    toast({
+      title: "Feature coming soon",
+      description: "The ability to export voters will be available soon",
+    });
+  };
+
+  const handleEditVoter = (id: string) => {
+    toast({
+      title: "Feature coming soon",
+      description: "The ability to edit voters will be available soon",
+    });
+  };
+
+  const handleDeleteVoter = (id: string) => {
+    setDeleteVoterId(id);
+  };
+
+  const confirmDelete = () => {
+    if (deleteVoterId) {
+      deleteVoterMutation.mutate(deleteVoterId);
+    }
+  };
+
+  const handleAddVoter = () => {
+    toast({
+      title: "Feature coming soon",
+      description: "The ability to add individual voters will be available soon",
+    });
+  };
+
+  useEffect(() => {
+    document.title = "Voters | ElectManager";
+  }, []);
+
+  return (
+    <MainLayout>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Voter Management</h1>
+          <p className="text-sm text-gray-600">Create and manage voter accounts</p>
+        </div>
+        <div className="mt-4 sm:mt-0 space-x-2">
+          <Button variant="outline" onClick={handleImportVoters}>
+            <Upload className="h-4 w-4 mr-2" />
+            Import
+          </Button>
+          <Button onClick={handleAddVoter}>
+            <PlusIcon className="h-4 w-4 mr-2" />
+            Create Voter
+          </Button>
+        </div>
+      </div>
+
+      <div className="mb-6 flex flex-col md:flex-row md:items-center md:space-x-4">
+        <div className="flex-1 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:space-x-4">
+            <div className="w-full md:w-1/3 mb-4 sm:mb-0">
+              <Input
+                placeholder="Search voters..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {(electionsError || electionGroupsError) && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>
+            Failed to fetch data. Showing cached data instead.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {(electionsLoading || electionGroupsLoading) ? (
+        <Skeleton className="h-64 w-full mb-6" />
+      ) : (
+        <VoterBulkGenerator
+          elections={displayElections}
+          electionGroups={Array.isArray(electionGroups?.data) ? electionGroups.data : []}
+          onGenerate={handleGenerateVoters}
+          isGenerating={generateVotersMutation.isPending}
+        />
+      )}
+
+      {votersError && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>
+            Failed to fetch voters. Please try again.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {votersLoading ? (
+        <Skeleton className="h-96 w-full" />
+      ) : (
+        <VotersTable 
+          voters={voters} 
+          pagination={pagination}
+          onPageChange={handlePageChange}
+          onEdit={handleEditVoter}
+          onDelete={handleDeleteVoter}
+        />
+      )}
+
+      <AlertDialog open={!!deleteVoterId} onOpenChange={(open) => !open && setDeleteVoterId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the voter account.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </MainLayout>
+  );
+}

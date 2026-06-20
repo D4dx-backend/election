@@ -1,0 +1,249 @@
+<!-- include header -->
+<%- include('include/_header') %>
+<!-- /include header -->
+<section class="main-banner" style="background: url(/img/bg.png)">
+  <div class="container">
+    <div class="banner">
+      <h3>We turn ideas into extraordinary digital products & experiences</h3>
+      <p>Lorem ipsum dolor sit amet consectetur. Faucibus ac sit elit diam ac. Viverra in nunc fames egestas morbi faucibus turpis id. In laoreet pretium tellus cursus dui pellentesque platea ut in.</p>
+
+      <button>Lets Talk <i class="fa-light fa-arrow-up-right"></i></button>
+    </div>
+    <div class="floating" onclick="document.getElementById('about').scrollIntoView({ behavior: 'smooth' })">
+      <img src="/img/godown.png" />
+    </div>
+  </div>
+</section>
+<section id="about">
+  <div class="container left-moved about">
+    <h1 class="about-head">DIGITAL TRANSFORMATION</h1>
+    <h1 class="about-head">&CONSULTATION</h1>
+    <div class="two-column">
+      <div>
+        <h5>About Us</h5>
+        <h4>Tying business, UX, and UI together through sustainable design. We prioritize collaboration and open dialogue in our work.</h4>
+        <P>We are a digital solution company that specializes in helping businesses navigate the complex world of digital technology and thrive in the digital age. Our team of experts brings a wealth of experience and knowledge in digital transformation and consultancy to help businesses of all sizes achieve their goals.</P>
+        <button>Find out more about us <i class="fa-light fa-arrow-up-right"></i></button>
+      </div>
+      <div>
+        <div class="cascading">
+          <i class="fa-light fa-message-heart fa-beat-fade"></i>
+          <div>
+            <div>10+</div>
+            <div>Satified Customers</div>
+          </div>
+        </div>
+        <div class="cascading">
+          <i class="fa-light fa-light fa-mug-hot fa-beat-fade"></i>
+          <div>
+            <div>85%</div>
+            <div>Recurring customers</div>
+          </div>
+        </div>
+        <div class="cascading">
+          <i class="fa-light fa-industry fa-beat-fade"></i>
+          <div>
+            <div>5+</div>
+            <div>Industries served</div>
+          </div>
+        </div>
+        <img src="/img/about.png" />
+      </div>
+    </div>
+  </div>
+  <img class="about-bottom-image" src="/img/keyboard.png" />
+</section>
+<section class="services-page">
+  <img class="service-bottom-image" src="/img/round-shadow.png" />
+  <div style="position: relative" class="container">
+    <h5 class="side-head light">Our Services</h5>
+    <div class="two-column services">
+      <div class="sticky-list">
+        <h3>From idea to launch. Absolute assistance from our Crew!</h3>
+        <ol class="li-items">
+          <% servicesData.forEach(service => { %>
+          <li data-content="<%= service.id %>"><%= service.title %></li>
+          <% }); %>
+        </ol>
+      </div>
+      <div class="left content-area">
+        <% servicesData.forEach(service => { %>
+        <div id="<%= service.id %>" class="content">
+          <h4><%= service.title %></h4>
+          <p><%= service.description %></p>
+          <button class="btn-color">Know more <i class="fa-light fa-arrow-up-right"></i></button>
+        </div>
+        <% }); %>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="our-values">
+  <div class="container">
+    <div class="ccolumn">
+      <h5 class="side-head">Our Values</h5>
+      <h2>Why work with us?</h2>
+      <p>We are a digital solution company that specializes in helping businesses navigate.</p>
+      <button class="more-button">Contact Us <i class="fa-light fa-arrow-up-right"></i></button>
+    </div>
+    <div class="ccolumn">
+      <!-- Second Column Content -->
+      <div class="crow">
+        <div class="cbox">
+          <img src="/img/value-1.svg" />
+          <h3>Focus on quality and efficiency</h3>
+        </div>
+        <div class="cbox">
+          <img src="/img/value-1.svg" />
+          <h3>Collaboration and alignment</h3>
+        </div>
+      </div>
+      <div class="crow">
+        <div class="cbox">
+          <img src="/img/value-1.svg" />
+          <h3>Experience meets aspiration</h3>
+        </div>
+        <div class="cbox">
+          <img src="/img/value-1.svg" />
+          <h3>On-time Project Delivery</h3>
+        </div>
+      </div>
+    </div>
+  </div>
+  <img class="our-values-image" src="/img/our-values.png" />
+  <img class="about-bottom-image value" src="/img/value-key.png" />
+</section>
+<section class="our-projects">
+  <div class="container center">
+    <div class="header-section">
+      <h5 class="side-head light">Our Works</h5>
+      <h2>Few real-world design.</h2>
+      <p>Lorem ipsum dolor sit amet consectetur. Faucibus ac sit elit diam ac. Viverra in nunc fames egestas morbi faucibus turpis id.</p>
+      <button class="btn-color center">View Our Works <i class="fa-light fa-arrow-up-right"></i></button>
+    </div>
+  </div>
+  <div class="images">
+    <maqquee class="block"><img src="/img/work1.png" /><img src="/img/work2.png" /> <img src="/img/work1.png" /><img src="/img/work2.png" /> <img src="/img/work1.png" /><img src="/img/work2.png" /> <img src="/img/work1.png" /><img src="/img/work2.png" /></maqquee>
+    <div class="block"><img src="/img/work1.png" /><img src="/img/work2.png" /> <img src="/img/work1.png" /><img src="/img/work2.png" /> <img src="/img/work1.png" /><img src="/img/work2.png" /> <img src="/img/work1.png" /><img src="/img/work2.png" /></div>
+    <div class="block"><img src="/img/work1.png" /><img src="/img/work2.png" /> <img src="/img/work1.png" /><img src="/img/work2.png" /> <img src="/img/work1.png" /><img src="/img/work2.png" /> <img src="/img/work1.png" /><img src="/img/work2.png" /></div>
+    <svg width="100%" height="100px" viewBox="0 0 100 50" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 0,0 Q 50,50 100,0 L 100,50 L 0,50 Z" fill="#f4f4f4" />
+    </svg>
+  </div>
+</section>
+<section>
+  <div class="container product-list">
+    <div class="product">
+      <div class="image"><img src="/img/project.png" /></div>
+      <div class="detail">
+        <h3>PROJECT NAME</h3>
+        <h2>Transformative Solutions for a Dynamic Tourist Landing Page</h2>
+        <p>Content Management System/ Web Design/ Web Development/ User Experience/ Copywriting</p>
+        <button class="more-button">View Project <i class="fa-light fa-arrow-up-right"></i></button>
+      </div>
+    </div>
+    <div class="product">
+      <div class="image"><img src="/img/project2.png" /></div>
+      <div class="detail">
+        <h3>PROJECT NAME</h3>
+        <h2>Transformative Solutions for a Dynamic Tourist Landing Page</h2>
+        <p>Content Management System/ Web Design/ Web Development/ User Experience/ Copywriting</p>
+        <button class="more-button">View Project <i class="fa-light fa-arrow-up-right"></i></button>
+      </div>
+    </div>
+    <div class="product">
+      <div class="image"><img src="/img/project3.png" /></div>
+      <div class="detail">
+        <h3>PROJECT NAME</h3>
+        <h2>Transformative Solutions for a Dynamic Tourist Landing Page</h2>
+        <p>Content Management System/ Web Design/ Web Development/ User Experience/ Copywriting</p>
+        <button class="more-button">View Project <i class="fa-light fa-arrow-up-right"></i></button>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="testimonials" style="background-color: rgba(25, 25, 61, 1)">
+  <div class="container">
+    <h5 class="side-head light">Testimonials</h5>
+    <h2>From startups to renowned brands, We Cherish!</h2>
+    <div class="grid">
+      <div class="testimonial">
+        <img src="/img/Adobe.png" />
+        <p>This was the most well-managed project I’ve been a part of. The communication was exceptional.</p>
+        <div class="title">
+          <div>Nikh Khosla</div>
+          <div>CEO - Seneca (US)</div>
+        </div>
+      </div>
+      <div class="testimonial">
+        <img src="/img/logo.png" />
+        <p>This was the most well-managed project I’ve been a part of. The communication was exceptional.</p>
+        <div class="title">
+          <div>Nikh Khosla</div>
+          <div>CEO - Seneca (US)</div>
+        </div>
+      </div>
+      <div class="blank"></div>
+      <div class="testimonial">
+        <img src="/img/logo.png" />
+        <p>This was the most well-managed project I’ve been a part of. The communication was exceptional.</p>
+        <div class="title">
+          <div>Nikh Khosla</div>
+          <div>CEO - Seneca (US)</div>
+        </div>
+      </div>
+      <div class="testimonial">
+        <img src="/img/logo.png" />
+        <p>This was the most well-managed project I’ve been a part of. The communication was exceptional.</p>
+        <div class="title">
+          <div>Nikh Khosla</div>
+          <div>CEO - Seneca (US)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="clients">
+  <div class="container">
+    <p>Trusted by 100+ companies</p>
+    <div class="client-list"><img src="/img/Adobe.png" /> <img src="/img/Elastic.png" /> <img src="/img/Adobe.png" /> <img src="/img/Elastic.png" /> <img src="/img/Adobe.png" /> <img src="/img/Elastic.png" /> <img src="/img/Adobe.png" /> <img src="/img/Elastic.png" /></div>
+  </div>
+</section>
+<section class="blogs">
+  <div class="container">
+    <h5 class="side-head">Blogs</h5>
+    <h2>Insights of software development from our expertise</h2>
+    <button class="more-button">View Blogs <i class="fa-light fa-arrow-up-right"></i></button>
+
+    <!-- views/news.ejs -->
+
+    <div class="blog-list">
+      <% newsData.forEach(function(news) { %>
+      <div class="blog">
+        <div>
+          <h3><%= news.title %></h3>
+          <button class="more-button no-border">View Blogs <i class="fa-light fa-arrow-up-right"></i></button>
+        </div>
+        <div>
+          <div><%= news.content %></div>
+          <div><img src="<%= news.imageSrc %>" /></div>
+        </div>
+      </div>
+      <% }); %>
+    </div>
+  </div>
+</section>
+<section class="excited" style="background: #3a3a9b">
+  <div class="container">
+    <h5 class="side-head light">Excited</h5>
+    <h1>Since you’ve got this far, <span> why not find out how we can help?</span></h1>
+    <div class="buttons">
+      <button class="more-button blue">Let’s Talk <i class="fa-light fa-arrow-up-right"></i></button>
+      <button class="more-button light white">View Our Works <i class="fa-light fa-arrow-up-right"></i></button>
+    </div>
+  </div>
+</section>
+<!-- <div class="no-mobile">Sorry, We haven't worked on Mobile View, Check in Web Browser!</div> -->
+<!-- include footer -->
+<%- include('include/_footer') %>
+<!-- /include footer -->
