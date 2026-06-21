@@ -153,6 +153,13 @@ export default function VotingPortal() {
                 }`}
                 onClick={() => handleElectionClick(election._id)}
               >
+                {election.logo?.url && (
+                  <img
+                    src={election.logo.url}
+                    alt={election.logo.alt || election.title}
+                    className="w-full max-h-32 object-contain bg-gray-50"
+                  />
+                )}
                 <CardContent className="p-4">
                   <div className="flex justify-between items-start mb-2">
                     <div>

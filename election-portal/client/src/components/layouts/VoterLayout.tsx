@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { useLocation } from 'wouter';
-import { LogOut, User } from 'lucide-react';
+import { LogOut, User, Vote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +19,7 @@ interface VoterLayoutProps {
 
 export default function VoterLayout({ children, title }: VoterLayoutProps) {
   const [, navigate] = useLocation();
+  const [location] = useLocation();
 
   // Check if user is authenticated
   useEffect(() => {
@@ -44,7 +46,7 @@ export default function VoterLayout({ children, title }: VoterLayoutProps) {
 
   // Set document title
   useEffect(() => {
-    document.title = title ? `${title} | Election Management System` : 'Election Management System';
+    document.title = title ? `${title} | Vote+` : 'Vote+';
   }, [title]);
 
   return (
@@ -52,13 +54,13 @@ export default function VoterLayout({ children, title }: VoterLayoutProps) {
       {/* Mobile-optimized Header */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10 shadow-sm">
         <div className="container mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex-1 min-w-0">
-            <h1 
-              className="text-lg md:text-xl font-bold cursor-pointer truncate" 
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            <img
+              src="/logo.png"
+              alt="Vote+"
+              className="h-10 w-auto object-contain cursor-pointer"
               onClick={() => navigate('/voting')}
-            >
-              Election Portal
-            </h1>
+            />
             {title && (
               <p className="text-xs md:text-sm text-muted-foreground truncate">
                 {title}
@@ -90,16 +92,55 @@ export default function VoterLayout({ children, title }: VoterLayoutProps) {
       </header>
       
       {/* Main Content with mobile-friendly padding */}
-      <main className="flex-1 pb-16">
+      <main className="flex-1 pb-20">
         {children}
+
+        <footer className="mt-8 px-4 py-4 text-center text-xs text-gray-400">
+          Powered by{" "}
+          <a
+            href="https://d4dx.co"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-primary hover:underline"
+          >
+            D4DX.CO
+          </a>
+        </footer>
       </main>
-      
-      {/* Simplified Footer for mobile */}
-      <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-3 fixed bottom-0 w-full">
-        <div className="container mx-auto px-4 text-center text-xs text-gray-500 dark:text-gray-400">
-          <p>© {new Date().getFullYear()} Election Management System</p>
-        </div>
-      </footer>
+
+      {/* Mobile-first bottom navigation */}
+      <nav
+        className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 fixed bottom-0 inset-x-0 z-40 shadow-[0_-1px_3px_rgba(0,0,0,0.08)]"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <ul className="flex items-stretch justify-around">
+          <li className="flex-1">
+            <button
+              type="button"
+              onClick={() => navigate('/voting')}
+              className={cn(
+                "w-full flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium transition-colors",
+                location.startsWith('/voting') || location.startsWith('/election/')
+                  ? "text-primary"
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400"
+              )}
+            >
+              <Vote className="h-5 w-5" />
+              <span className="leading-none">Vote</span>
+            </button>
+          </li>
+          <li className="flex-1">
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium text-gray-500 hover:text-red-600 dark:text-gray-400 transition-colors"
+            >
+              <LogOut className="h-5 w-5" />
+              <span className="leading-none">Logout</span>
+            </button>
+          </li>
+        </ul>
+      </nav>
     </div>
   );
 }

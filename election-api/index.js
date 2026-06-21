@@ -46,6 +46,8 @@ app.use("/images", express.static("./public/proteincategory"));
 app.use("/css", express.static(path.resolve(__dirname, "assets/css")));
 app.use("/img", express.static(path.resolve(__dirname, "assets/img")));
 app.use("/js", express.static(path.resolve(__dirname, "assets/js")));
+// User-uploaded images (franchise logos, election banners)
+app.use("/uploads", express.static(path.resolve(__dirname, "public/uploads")));
 
 // middleware
 app.use(express.json());

@@ -68,24 +68,29 @@ export default function VotingBallot() {
     enabled: !!electionId,
   });
 
-  // Extract and process election data
-  const election = electionData && typeof electionData === 'object' && 'data' in electionData 
-    ? (Array.isArray(electionData.data) && electionData.data.length > 0 
-        ? electionData.data[0] 
-        : electionData.data)
-    : null;
+  // Extract and process election data.
+  // The default query function unwraps `responseData.data`, so `electionData`
+  // is usually already the election object. Handle the unwrapped object, an
+  // array, and the full { data } object shapes defensively.
+  const election: any = Array.isArray(electionData)
+    ? (electionData.length > 0 ? electionData[0] : null)
+    : (electionData && typeof electionData === 'object' && 'data' in electionData
+        ? (electionData as any).data
+        : (electionData || null));
 
   // Extract nominees from API response
-  // If no nominees from the API, use mock data for testing
-  let nominees = [];
-  
-  if (nomineesData && typeof nomineesData === 'object' && 'data' in nomineesData) {
-    nominees = Array.isArray(nomineesData.data) ? nomineesData.data : [];
+  // The default query function unwraps `responseData.data`, so `nomineesData`
+  // is usually already the array. Handle both the unwrapped array and the
+  // full { success, data } object shapes defensively.
+  let nominees: any[] = [];
+
+  if (Array.isArray(nomineesData)) {
+    nominees = nomineesData;
+  } else if (nomineesData && typeof nomineesData === 'object' && Array.isArray((nomineesData as any).data)) {
+    nominees = (nomineesData as any).data;
   }
-  
-  // Parse nominees from API response
-  if (nomineesData && 'success' in nomineesData && nomineesData.success && 'data' in nomineesData) {
-    nominees = nomineesData.data;
+
+  if (nominees.length) {
     console.log('Nominees loaded from API:', nominees.length);
   }
   
@@ -182,20 +187,7 @@ export default function VotingBallot() {
     } else {
       // If not selected, check if we've reached the maximum allowed
       if (election && selectedNominees.length < election.numberToBeElected) {
-        // Additional gender check if needed
-        if (gender === 'female' || 
-            (gender === 'male' && 
-             (selectedFemaleCount >= (election.femaleMinimum || 0) || 
-              selectedNominees.length + 1 < election.numberToBeElected))) {
-          setSelectedNominees([...selectedNominees, nomineeId]);
-        } else {
-          // Cannot select this male nominee due to female minimum requirement
-          toast({
-            title: "Gender Requirement",
-            description: `You must select at least ${election.femaleMinimum} female nominee(s)`,
-            variant: "destructive"
-          });
-        }
+        setSelectedNominees([...selectedNominees, nomineeId]);
       } else {
         // Maximum selection reached
         toast({
@@ -207,7 +199,7 @@ export default function VotingBallot() {
     }
   };
 
-  // Validate gender requirements before submitting
+  // Validate selections before submitting
   const validateSelections = () => {
     if (!election) return false;
     
@@ -220,25 +212,25 @@ export default function VotingBallot() {
       });
       return false;
     }
-    
-    // Check female minimum requirement if specified
-    if (election.femaleMinimum && selectedFemaleCount < election.femaleMinimum) {
-      toast({
-        title: "Gender Requirement",
-        description: `You must select at least ${election.femaleMinimum} female nominee(s)`,
-        variant: "destructive"
-      });
-      return false;
-    }
-    
-    // Check male minimum requirement if specified
-    if (election.maleMinimum && selectedMaleCount < election.maleMinimum) {
-      toast({
-        title: "Gender Requirement",
-        description: `You must select at least ${election.maleMinimum} male nominee(s)`,
-        variant: "destructive"
-      });
-      return false;
+
+    // Enforce gender minimums only when the election uses gender-based selection.
+    if (election.genderBasedSelection) {
+      if ((election.maleMinimum || 0) > 0 && selectedMaleCount < election.maleMinimum) {
+        toast({
+          title: "Gender Requirement",
+          description: `Please select at least ${election.maleMinimum} male nominee(s)`,
+          variant: "destructive"
+        });
+        return false;
+      }
+      if ((election.femaleMinimum || 0) > 0 && selectedFemaleCount < election.femaleMinimum) {
+        toast({
+          title: "Gender Requirement",
+          description: `Please select at least ${election.femaleMinimum} female nominee(s)`,
+          variant: "destructive"
+        });
+        return false;
+      }
     }
     
     return true;
@@ -430,27 +422,12 @@ export default function VotingBallot() {
                 <Card key={nominee._id} className="w-full">
                   <div className="p-4">
                     <div className="flex items-center space-x-3">
-                      <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
-                        nominee.gender === 'female' 
-                          ? 'bg-pink-100 dark:bg-pink-900/30' 
-                          : 'bg-blue-100 dark:bg-blue-900/30'
-                      }`}>
-                        <User className={`h-5 w-5 ${
-                          nominee.gender === 'female' 
-                            ? 'text-pink-600 dark:text-pink-400' 
-                            : 'text-blue-600 dark:text-blue-400'
-                        }`} />
+                      <div className="h-10 w-10 rounded-full flex items-center justify-center bg-primary/10">
+                        <User className="h-5 w-5 text-primary" />
                       </div>
                       <div>
                         <div className="flex items-center flex-wrap gap-2">
                           <h3 className="font-medium">{nominee.name}</h3>
-                          <Badge variant="outline" className={`${
-                            nominee.gender === 'female'
-                              ? 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-900/30 dark:text-pink-300 dark:border-pink-800'
-                              : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
-                          }`}>
-                            {nominee.gender === 'female' ? 'Female' : 'Male'}
-                          </Badge>
                         </div>
                         {nominee.description && (
                           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{nominee.description}</p>
@@ -461,16 +438,6 @@ export default function VotingBallot() {
                 </Card>
               ))}
             </div>
-          </div>
-          
-          <div className="mb-8">
-            <div className="flex justify-between text-sm mb-2">
-              <span>Gender Requirements</span>
-              <span className="font-medium">
-                {selectedFemaleCount}/{election.femaleMinimum || 0} female minimum met
-              </span>
-            </div>
-            <Progress value={100} className="h-2" />
           </div>
           
           <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
@@ -508,6 +475,13 @@ export default function VotingBallot() {
         {election && (
           <>
             <Card className="w-full mb-4 border-l-4 border-l-blue-500">
+              {election.logo?.url && (
+                <img
+                  src={election.logo.url}
+                  alt={election.logo.alt || election.title}
+                  className="w-full max-h-48 object-contain bg-gray-50 rounded-t-lg"
+                />
+              )}
               <div className="p-4">
                 <h1 className="text-xl font-bold mb-1">{election.title}</h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{election.organization}</p>
@@ -528,9 +502,6 @@ export default function VotingBallot() {
                   <h2 className="font-medium">Voting Instructions</h2>
                   <p className="text-sm text-muted-foreground">
                     Select exactly {election.numberToBeElected} nominee{election.numberToBeElected !== 1 ? 's' : ''} by tapping the checkbox next to their name.
-                    {election.femaleMinimum > 0 && (
-                      <span className="font-medium text-primary"> You must select at least {election.femaleMinimum} female nominee{election.femaleMinimum !== 1 ? 's' : ''}.</span>
-                    )}
                   </p>
                 </div>
               </div>
@@ -540,20 +511,24 @@ export default function VotingBallot() {
               <div className="mb-2">
                 <h2 className="text-lg font-semibold">Your Selections</h2>
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mt-1">
-                  <div className="flex gap-3 text-sm flex-wrap">
-                    <div className="flex items-center">
-                      <span className="inline-block w-3 h-3 bg-pink-200 dark:bg-pink-800 rounded-full mr-1"></span>
-                      Female: {selectedFemaleCount}/{election.femaleMinimum || 0} min
-                    </div>
-                    <div className="flex items-center">
-                      <span className="inline-block w-3 h-3 bg-blue-200 dark:bg-blue-800 rounded-full mr-1"></span>
-                      Male: {selectedMaleCount}
-                    </div>
-                  </div>
                   <div className="flex items-center font-medium text-sm">
                     <Users className="h-4 w-4 mr-1" />
                     Total: {selectedNominees.length}/{election.numberToBeElected}
                   </div>
+                  {election.genderBasedSelection && ((election.maleMinimum || 0) > 0 || (election.femaleMinimum || 0) > 0) && (
+                    <div className="flex items-center gap-3 text-sm">
+                      {(election.maleMinimum || 0) > 0 && (
+                        <span className={selectedMaleCount >= election.maleMinimum ? 'text-green-600' : 'text-muted-foreground'}>
+                          Male: {selectedMaleCount}/{election.maleMinimum} min
+                        </span>
+                      )}
+                      {(election.femaleMinimum || 0) > 0 && (
+                        <span className={selectedFemaleCount >= election.femaleMinimum ? 'text-green-600' : 'text-muted-foreground'}>
+                          Female: {selectedFemaleCount}/{election.femaleMinimum} min
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               
@@ -581,27 +556,17 @@ export default function VotingBallot() {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className={`h-12 w-12 rounded-full flex items-center justify-center ${
-                        nominee.gender === 'female' 
-                          ? 'bg-pink-100 dark:bg-pink-900/30' 
-                          : 'bg-blue-100 dark:bg-blue-900/30'
-                      }`}>
-                        <User className={`h-6 w-6 ${
-                          nominee.gender === 'female' 
-                            ? 'text-pink-600 dark:text-pink-400' 
-                            : 'text-blue-600 dark:text-blue-400'
-                        }`} />
+                      <div className="h-12 w-12 rounded-full flex items-center justify-center bg-primary/10">
+                        <User className="h-6 w-6 text-primary" />
                       </div>
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="font-medium">{nominee.name}</h3>
-                          <Badge variant="outline" className={`${
-                            nominee.gender === 'female'
-                              ? 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-900/30 dark:text-pink-300 dark:border-pink-800'
-                              : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
-                          }`}>
-                            {nominee.gender === 'female' ? 'Female' : 'Male'}
-                          </Badge>
+                          {election?.genderBasedSelection && nominee.gender && (
+                            <Badge variant="outline" className="capitalize text-xs">
+                              {nominee.gender}
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                           {nominee.description || nominee.bio || 'No description provided'}

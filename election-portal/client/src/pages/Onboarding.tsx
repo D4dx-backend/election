@@ -50,7 +50,7 @@ export default function Onboarding() {
   const superAdminSteps: OnboardingStep[] = [
     {
       id: "welcome",
-      title: "Welcome to ElectManager",
+      title: "Welcome to Vote+",
       description: "Get started with your super administrator account",
       component: <WelcomeStep />,
       isCompleted: false
@@ -58,7 +58,7 @@ export default function Onboarding() {
     {
       id: "system-tour",
       title: "System Tour",
-      description: "Learn about the key features of ElectManager",
+      description: "Learn about the key features of Vote+",
       component: <SystemTourStep />,
       isCompleted: false
     },
@@ -79,7 +79,7 @@ export default function Onboarding() {
     {
       id: "complete",
       title: "All Set!",
-      description: "You're ready to start using ElectManager",
+      description: "You're ready to start using Vote+",
       component: <CompleteStep />,
       isCompleted: false
     }
@@ -88,7 +88,7 @@ export default function Onboarding() {
   const franchiseAdminSteps: OnboardingStep[] = [
     {
       id: "welcome",
-      title: "Welcome to ElectManager",
+      title: "Welcome to Vote+",
       description: "Get started with your franchise administrator account",
       component: <WelcomeStep />,
       isCompleted: false
@@ -126,7 +126,7 @@ export default function Onboarding() {
   const electionAdminSteps: OnboardingStep[] = [
     {
       id: "welcome",
-      title: "Welcome to ElectManager",
+      title: "Welcome to Vote+",
       description: "Get started with your election administrator account",
       component: <WelcomeStep />,
       isCompleted: false
@@ -203,7 +203,7 @@ export default function Onboarding() {
       localStorage.setItem("onboardingComplete", "true");
       toast({
         title: "Onboarding Complete!",
-        description: "Welcome to ElectManager",
+        description: "Welcome to Vote+",
       });
 
       // Redirect based on role
@@ -280,7 +280,7 @@ export default function Onboarding() {
                 <span className="font-bold text-lg">EM</span>
               </div>
               <h1 className="ml-3 text-2xl font-bold text-gray-900">
-                ElectManager Onboarding
+                Vote+ Onboarding
               </h1>
             </div>
             <Button variant="outline" onClick={skipOnboarding}>
@@ -408,7 +408,7 @@ function WelcomeStep() {
             : userRole === "franchise_admin" 
               ? "Franchise Administrator" 
               : "Election Administrator"}.
-          Let's get you started with ElectManager.
+          Let's get you started with Vote+.
         </p>
         <p className="text-gray-600">
           This quick onboarding process will help you understand the system
@@ -491,7 +491,7 @@ function SystemTourStep() {
   return (
     <div className="space-y-6">
       <p className="text-gray-600">
-        Let's explore the key features of the ElectManager system that are relevant to your role as a{" "}
+        Let's explore the key features of the Vote+ system that are relevant to your role as a{" "}
         {userRole === "super_admin" 
           ? "Super Administrator" 
           : userRole === "franchise_admin" 
@@ -539,7 +539,7 @@ function SystemTourStep() {
             </div>
             <div className="p-4">
               <p className="text-sm text-gray-600 mb-4">
-                The ElectManager system allows you to:
+                The Vote+ system allows you to:
               </p>
               <ul className="list-disc list-inside text-sm text-gray-600 space-y-2">
                 <li>Create and configure new elections with customizable parameters</li>
@@ -782,7 +782,7 @@ function VoterSetupStep() {
   return (
     <div className="space-y-4">
       <p className="text-gray-600 mb-6">
-        Managing voters is a critical part of running successful elections. ElectManager provides several ways to add voters to your elections.
+        Managing voters is a critical part of running successful elections. Vote+ provides several ways to add voters to your elections.
       </p>
 
       <div className="rounded-lg border p-4 bg-yellow-50 mb-6">
@@ -943,7 +943,7 @@ function CompleteStep() {
       </h3>
 
       <p className="text-gray-600 max-w-lg mx-auto">
-        You've completed the onboarding process and are ready to start using ElectManager as a{" "}
+        You've completed the onboarding process and are ready to start using Vote+ as a{" "}
         {userRole === "super_admin" 
           ? "Super Administrator" 
           : userRole === "franchise_admin" 

@@ -10,8 +10,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PlusCircle, Edit, Trash2, Globe, Phone, Image } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { MainLayout } from "@/components/layout/MainLayout";
+import { PaginationControls } from "@/components/ui/pagination-controls";
+import { Pagination } from "@/lib/types";
 
 interface Franchise {
   _id: string;
@@ -42,7 +46,6 @@ interface EditFranchiseFormData {
 
 interface AdminFormData {
   username: string;
-  email: string;
   fullName: string;
   password: string;
   franchiseId: string;
@@ -73,7 +76,6 @@ export default function Franchises() {
   const [selectedFranchise, setSelectedFranchise] = useState<Franchise | null>(null);
   const [adminFormData, setAdminFormData] = useState<AdminFormData>({
     username: "",
-    email: "",
     fullName: "",
     password: "",
     franchiseId: ""
@@ -85,13 +87,27 @@ export default function Franchises() {
   const [resetPasswordAdminId, setResetPasswordAdminId] = useState("");
   const [newPassword, setNewPassword] = useState("");
 
+  // Delete confirmation state
+  const [deleteFranchiseId, setDeleteFranchiseId] = useState<string | null>(null);
+  const [deleteAdminId, setDeleteAdminId] = useState<string | null>(null);
+
   const { toast } = useToast();
   const [location, navigate] = useLocation();
 
-  // Fetch franchises using react-query
-  const { data: franchises = [], isLoading, error } = useQuery({
-    queryKey: ['/api/franchises'],
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  // Fetch franchises using react-query (server-side pagination)
+  const { data: franchisesResponse, isLoading, error } = useQuery<{ data: Franchise[]; pagination?: Pagination }>({
+    queryKey: ['/api/franchises', page],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/franchises?page=${page}&limit=${pageSize}`);
+      return res.json();
+    },
+    placeholderData: (prev) => prev,
   });
+  const franchises = franchisesResponse?.data ?? [];
+  const franchisesPagination = franchisesResponse?.pagination;
 
   // Create franchise mutation
   const createFranchiseMutation = useMutation({
@@ -112,7 +128,8 @@ export default function Franchises() {
     onSuccess: () => {
       toast({
         title: "Franchise created",
-        description: "The franchise has been created successfully."
+        description: "The franchise has been created successfully.",
+        variant: "success"
       });
       setIsCreateDialogOpen(false);
       resetCreateForm();
@@ -136,8 +153,10 @@ export default function Franchises() {
     onSuccess: () => {
       toast({
         title: "Franchise deleted",
-        description: "The franchise has been deleted successfully."
+        description: "The franchise has been deleted successfully.",
+        variant: "success"
       });
+      setDeleteFranchiseId(null);
       queryClient.invalidateQueries({ queryKey: ['/api/franchises'] });
     },
     onError: (error: Error) => {
@@ -171,7 +190,8 @@ export default function Franchises() {
     onSuccess: () => {
       toast({
         title: "Franchise updated",
-        description: "The franchise has been updated successfully."
+        description: "The franchise has been updated successfully.",
+        variant: "success"
       });
       setIsEditDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ['/api/franchises'] });
@@ -207,7 +227,8 @@ export default function Franchises() {
     onSuccess: () => {
       toast({
         title: "Admin created",
-        description: "Franchise administrator has been created successfully."
+        description: "Franchise administrator has been created successfully.",
+        variant: "success"
       });
       resetAdminForm();
       
@@ -234,9 +255,11 @@ export default function Franchises() {
     onSuccess: () => {
       toast({
         title: "Admin deleted",
-        description: "Franchise administrator has been removed successfully."
+        description: "Franchise administrator has been removed successfully.",
+        variant: "success"
       });
-      
+      setDeleteAdminId(null);
+
       // Refresh the franchise admins list
       if (selectedFranchise) {
         fetchFranchiseAdmins(selectedFranchise._id);
@@ -302,9 +325,7 @@ export default function Franchises() {
   };
 
   const handleDeleteFranchise = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this franchise?")) {
-      deleteFranchiseMutation.mutate(id);
-    }
+    setDeleteFranchiseId(id);
   };
 
   const resetCreateForm = () => {
@@ -330,7 +351,6 @@ export default function Franchises() {
   const resetAdminForm = () => {
     setAdminFormData({
       username: "",
-      email: "",
       fullName: "",
       password: "",
       franchiseId: selectedFranchise?._id || ""
@@ -351,9 +371,7 @@ export default function Franchises() {
   };
   
   const handleDeleteAdmin = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this administrator?")) {
-      deleteFranchiseAdminMutation.mutate(id);
-    }
+    setDeleteAdminId(id);
   };
   
   const handleEditSubmit = (e: React.FormEvent) => {
@@ -394,7 +412,7 @@ export default function Franchises() {
   // Get franchise admins
   const fetchFranchiseAdmins = async (franchiseId: string) => {
     try {
-      const response = await fetch(`/api/franchises/${franchiseId}/admins`, {
+      const response = await fetch(`/api/users/franchise-admins?franchiseId=${franchiseId}`, {
         headers: {
           "Authorization": `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -456,7 +474,8 @@ export default function Franchises() {
     onSuccess: () => {
       toast({
         title: "Password reset",
-        description: "Administrator password has been reset successfully."
+        description: "Administrator password has been reset successfully.",
+        variant: "success"
       });
       setIsResetPasswordDialogOpen(false);
     },
@@ -482,104 +501,8 @@ export default function Franchises() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Top Navigation Bar */}
-      <header className="bg-white shadow-sm">
-        <div className="px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <div className="flex">
-              <div className="flex-shrink-0 flex items-center">
-                <Link href="/" className="flex items-center">
-                  <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center text-white">
-                    <span className="font-bold text-sm">EM</span>
-                  </div>
-                  <span className="ml-2 text-lg font-bold text-gray-900">
-                    ElectManager
-                  </span>
-                </Link>
-              </div>
-            </div>
-            <div className="hidden md:flex md:items-center md:justify-end md:flex-1 lg:w-0">
-              <Button
-                variant="ghost"
-                className="ml-4 text-gray-500 hover:text-gray-700"
-                onClick={handleLogout}
-              >
-                <span className="mr-2">Logout</span>
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex flex-1">
-        {/* Sidebar Navigation (Desktop) */}
-        <aside className="hidden md:flex md:flex-col md:w-64 md:border-r md:border-gray-200 md:bg-white">
-          <div className="flex-1 flex flex-col pt-5 pb-4 overflow-y-auto">
-            <nav className="mt-5 px-3 space-y-1">
-              <Link
-                href="/"
-                className={`group flex items-center px-3 py-2 text-sm font-medium rounded-md ${
-                  location === "/" ? "bg-primary text-white" : "text-gray-700 hover:text-gray-900 hover:bg-gray-100"
-                }`}
-              >
-                <span className="ml-3">Dashboard</span>
-              </Link>
-              <Link
-                href="/franchises"
-                className={`group flex items-center px-3 py-2 text-sm font-medium rounded-md ${
-                  location === "/franchises" ? "bg-primary text-white" : "text-gray-700 hover:text-gray-900 hover:bg-gray-100"
-                }`}
-              >
-                <span className="ml-3">Franchises</span>
-              </Link>
-              <Link
-                href="/elections"
-                className={`group flex items-center px-3 py-2 text-sm font-medium rounded-md ${
-                  location.startsWith("/elections") ? "bg-primary text-white" : "text-gray-700 hover:text-gray-900 hover:bg-gray-100"
-                }`}
-              >
-                <span className="ml-3">Elections</span>
-              </Link>
-              <Link
-                href="/election-groups"
-                className={`group flex items-center px-3 py-2 text-sm font-medium rounded-md ${
-                  location === "/election-groups" ? "bg-primary text-white" : "text-gray-700 hover:text-gray-900 hover:bg-gray-100"
-                }`}
-              >
-                <span className="ml-3">Election Groups</span>
-              </Link>
-              <Link
-                href="/nominees"
-                className={`group flex items-center px-3 py-2 text-sm font-medium rounded-md ${
-                  location === "/nominees" ? "bg-primary text-white" : "text-gray-700 hover:text-gray-900 hover:bg-gray-100"
-                }`}
-              >
-                <span className="ml-3">Nominees</span>
-              </Link>
-              <Link
-                href="/voters"
-                className={`group flex items-center px-3 py-2 text-sm font-medium rounded-md ${
-                  location === "/voters" ? "bg-primary text-white" : "text-gray-700 hover:text-gray-900 hover:bg-gray-100"
-                }`}
-              >
-                <span className="ml-3">Voters</span>
-              </Link>
-              <Link
-                href="/analytics"
-                className={`group flex items-center px-3 py-2 text-sm font-medium rounded-md ${
-                  location === "/analytics" ? "bg-primary text-white" : "text-gray-700 hover:text-gray-900 hover:bg-gray-100"
-                }`}
-              >
-                <span className="ml-3">Analytics</span>
-              </Link>
-            </nav>
-          </div>
-        </aside>
-
-        {/* Main content */}
-        <main className="flex-1 overflow-y-auto bg-gray-50">
-          <div className="container mx-auto py-6">
+    <MainLayout>
+      <div className="container mx-auto py-6">
             <div className="mb-6 flex justify-between items-center">
               <div>
                 <h1 className="text-3xl font-bold tracking-tight">Franchises</h1>
@@ -799,10 +722,11 @@ export default function Franchises() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="text-red-500 hover:text-red-700"
+                                  className="text-red-600 hover:text-red-900 hover:bg-red-50"
                                   onClick={() => handleDeleteAdmin(admin._id)}
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Trash2 className="h-4 w-4 mr-1" />
+                                  Delete
                                 </Button>
                               </div>
                             </div>
@@ -835,18 +759,6 @@ export default function Franchises() {
                             onChange={handleAdminFormChange}
                             required
                             placeholder="John Doe"
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label htmlFor="email">Email</Label>
-                          <Input
-                            id="email"
-                            name="email"
-                            type="email"
-                            value={adminFormData.email}
-                            onChange={handleAdminFormChange}
-                            required
-                            placeholder="admin@example.com"
                           />
                         </div>
                         <div className="grid gap-2">
@@ -956,6 +868,87 @@ export default function Franchises() {
                     Failed to load franchises. Please try again.
                   </div>
                 ) : franchises && Array.isArray(franchises) && franchises.length > 0 ? (
+                  <>
+                  <div className="divide-y divide-gray-100 md:hidden">
+                    {franchises.map((franchise: Franchise) => (
+                      <div key={franchise._id} className="p-4 space-y-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            {franchise.logo?.url ? (
+                              <img
+                                src={franchise.logo.url}
+                                alt={franchise.logo.alt || franchise.name}
+                                className="h-10 w-10 rounded-sm object-cover shrink-0"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded-sm bg-gray-200 flex items-center justify-center shrink-0">
+                                <Image className="h-5 w-5 text-gray-500" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <h3 className="font-semibold text-gray-900 truncate">{franchise.name}</h3>
+                              <p className="text-sm text-gray-500">Created {formatDate(franchise.createdAt)}</p>
+                            </div>
+                          </div>
+                          <Badge variant={franchise.status === 'active' ? 'default' : 'secondary'}>
+                            {franchise.status === 'active' ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </div>
+
+                        <div className="grid gap-3 rounded-md bg-gray-50 p-3 text-sm">
+                          <div>
+                            <p className="text-xs text-gray-500">Website</p>
+                            {franchise.websiteUrl ? (
+                              <a
+                                href={franchise.websiteUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center font-medium text-blue-600 hover:underline"
+                              >
+                                <Globe className="h-4 w-4 mr-1" /> Website
+                              </a>
+                            ) : (
+                              <p className="text-gray-400">Not available</p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Contact</p>
+                            {franchise.contactNumber ? (
+                              <p className="inline-flex items-center font-medium text-gray-900">
+                                <Phone className="h-4 w-4 mr-1" /> {franchise.contactNumber}
+                              </p>
+                            ) : (
+                              <p className="text-gray-400">Not available</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => handleEditFranchise(franchise)}>
+                            <Edit className="h-4 w-4 mr-1" /> Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-blue-600 hover:text-blue-700"
+                            onClick={() => handleManageAdmin(franchise)}
+                          >
+                            Admins
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => handleDeleteFranchise(franchise._id)}
+                            disabled={deleteFranchiseMutation.isPending}
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" /> Delete
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden md:block">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1020,7 +1013,7 @@ export default function Franchises() {
                           <TableCell className="text-right">
                             <div className="flex justify-end space-x-2">
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
                                 onClick={() => handleEditFranchise(franchise)}
                               >
@@ -1042,7 +1035,7 @@ export default function Franchises() {
                                 Admins
                               </Button>
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
                                 className="text-red-600 hover:text-red-700"
                                 onClick={() => handleDeleteFranchise(franchise._id)}
@@ -1057,23 +1050,48 @@ export default function Franchises() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
+                  </>
                 ) : (
                   <div className="p-6 text-center">
                     <p className="text-gray-500">No franchises found. Create one to get started.</p>
                   </div>
                 )}
               </CardContent>
-              {franchises && Array.isArray(franchises) && franchises.length > 0 ? (
-                <CardFooter className="border-t border-gray-200 p-4 flex justify-between items-center">
-                  <div className="text-sm text-gray-500">
-                    Showing {franchises.length} franchise{franchises.length !== 1 ? 's' : ''}
-                  </div>
+              {franchisesPagination && franchisesPagination.total > 0 ? (
+                <CardFooter className="border-t border-gray-200 p-4">
+                  <PaginationControls
+                    page={franchisesPagination.page}
+                    totalPages={franchisesPagination.totalPages ?? 1}
+                    total={franchisesPagination.total}
+                    pageSize={franchisesPagination.pageSize}
+                    onPageChange={setPage}
+                    className="mt-0 w-full"
+                  />
                 </CardFooter>
               ) : null}
             </Card>
           </div>
-        </main>
-      </div>
-    </div>
+
+          <ConfirmDialog
+            open={!!deleteFranchiseId}
+            onOpenChange={(open) => !open && setDeleteFranchiseId(null)}
+            onConfirm={() => deleteFranchiseId && deleteFranchiseMutation.mutate(deleteFranchiseId)}
+            loading={deleteFranchiseMutation.isPending}
+            title="Delete franchise?"
+            description="This will permanently delete the franchise and may affect its associated data. This action cannot be undone."
+            confirmText="Delete franchise"
+          />
+
+          <ConfirmDialog
+            open={!!deleteAdminId}
+            onOpenChange={(open) => !open && setDeleteAdminId(null)}
+            onConfirm={() => deleteAdminId && deleteFranchiseAdminMutation.mutate(deleteAdminId)}
+            loading={deleteFranchiseAdminMutation.isPending}
+            title="Delete administrator?"
+            description="This will permanently remove this franchise administrator's access. This action cannot be undone."
+            confirmText="Delete administrator"
+          />
+    </MainLayout>
   );
 }

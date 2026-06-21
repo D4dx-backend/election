@@ -3,7 +3,6 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { RecentElectionsTable } from "@/components/dashboard/RecentElectionsTable";
 import { FranchiseOverview } from "@/components/dashboard/FranchiseOverview";
-import { QuickActions } from "@/components/dashboard/QuickActions";
 import { Vote, Users, CheckCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { mockDashboardStats, getRecentElections } from "@/lib/mockData";
@@ -29,37 +28,53 @@ export default function Dashboard() {
   }, []);
   
   // Fetch dashboard stats from API with fallback to mock data
-  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    isError: statsError,
+    error: statsFetchError,
+  } = useQuery<DashboardStats>({
     queryKey: ['/api/analytics/dashboard'],
-    onError: (error) => {
-      console.error('Error fetching dashboard stats:', error);
+  });
+
+  // Fetch recent elections from API
+  const {
+    data: recentElections,
+    isLoading: electionsLoading,
+    isError: electionsError,
+    error: electionsFetchError,
+  } = useQuery<ElectionWithDetails[]>({
+    queryKey: ['/api/elections'],
+  });
+
+  useEffect(() => {
+    if (statsError) {
+      console.error('Error fetching dashboard stats:', statsFetchError);
       toast({
         title: "Failed to load dashboard stats",
         description: "Using cached data instead",
         variant: "destructive"
       });
     }
-  });
+  }, [statsError, statsFetchError, toast]);
 
-  // Fetch recent elections from API
-  const { data: recentElections, isLoading: electionsLoading } = useQuery<ElectionWithDetails[]>({
-    queryKey: ['/api/elections'],
-    onError: (error) => {
-      console.error('Error fetching recent elections:', error);
+  useEffect(() => {
+    if (electionsError) {
+      console.error('Error fetching recent elections:', electionsFetchError);
       toast({
         title: "Failed to load recent elections",
         description: "Using cached data instead",
         variant: "destructive"
       });
     }
-  });
+  }, [electionsError, electionsFetchError, toast]);
 
   // Use actual data if available, fall back to mock data if needed
   const displayStats = stats || mockDashboardStats;
   const displayElections = recentElections ? recentElections.slice(0, 3) : getRecentElections(3);
 
   useEffect(() => {
-    document.title = "Dashboard | ElectManager";
+    document.title = "Dashboard | Vote+";
   }, []);
 
   return (
@@ -73,12 +88,12 @@ export default function Dashboard() {
         </div>
 
         {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 md:gap-6 mb-6">
           {statsLoading ? (
             <>
-              <Skeleton className="h-28 w-full" />
-              <Skeleton className="h-28 w-full" />
-              <Skeleton className="h-28 w-full" />
+              <Skeleton className="h-24 w-full md:h-28" />
+              <Skeleton className="h-24 w-full md:h-28" />
+              <Skeleton className="h-24 w-full md:h-28" />
             </>
           ) : (
             <>
@@ -131,10 +146,9 @@ export default function Dashboard() {
           <RecentElectionsTable elections={displayElections} />
         )}
 
-        {/* Franchise Overview and Quick Actions */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Franchise Overview */}
-          <div className="lg:col-span-2">
+        {/* Franchise Overview — only relevant to super admins (cross-franchise view) */}
+        {user?.role === "super_admin" && (
+          <div className="mt-6">
             {statsLoading ? (
               <Skeleton className="h-64 w-full" />
             ) : (
@@ -147,16 +161,7 @@ export default function Dashboard() {
               />
             )}
           </div>
-
-          {/* Quick Actions */}
-          <div>
-            {statsLoading ? (
-              <Skeleton className="h-64 w-full" />
-            ) : (
-              <QuickActions recentActivity={displayStats.recentActivity} />
-            )}
-          </div>
-        </div>
+        )}
       </div>
     </MainLayout>
   );

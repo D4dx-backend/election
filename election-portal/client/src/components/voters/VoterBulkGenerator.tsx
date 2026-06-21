@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,20 +26,29 @@ interface VoterBulkGeneratorProps {
   }>;
   onGenerate: (options: BulkVoterGenerationOptions) => void;
   isGenerating?: boolean;
+  fixedElectionId?: string;
 }
 
 export function VoterBulkGenerator({ 
   elections, 
   electionGroups = [],
   onGenerate,
-  isGenerating = false 
+  isGenerating = false,
+  fixedElectionId,
 }: VoterBulkGeneratorProps) {
   const [prefix, setPrefix] = useState<string>("VOTE");
   const [startingNumber, setStartingNumber] = useState<number>(1001);
   const [count, setCount] = useState<number>(10); // Reduced default to avoid overloading system
-  const [selectedElections, setSelectedElections] = useState<string[]>([]);
+  const [selectedElections, setSelectedElections] = useState<string[]>(fixedElectionId ? [fixedElectionId] : []);
   const [selectedElectionGroupId, setSelectedElectionGroupId] = useState<string>("");
   const [assignmentType, setAssignmentType] = useState<"election" | "electionGroup">("election");
+
+  useEffect(() => {
+    if (fixedElectionId) {
+      setAssignmentType("election");
+      setSelectedElections([fixedElectionId]);
+    }
+  }, [fixedElectionId]);
 
   const handleElectionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const electionId = e.target.value;
@@ -104,9 +113,9 @@ export function VoterBulkGenerator({
     );
 
   return (
-    <Card className="mb-6">
+    <Card className="mb-0">
       <CardHeader className="px-6 py-4 border-b border-gray-200">
-        <CardTitle className="text-lg font-medium text-gray-900">Bulk Voter Generator</CardTitle>
+        <CardTitle className="text-lg font-medium text-gray-900">Create Bulk Voters</CardTitle>
       </CardHeader>
       <CardContent className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -159,92 +168,94 @@ export function VoterBulkGenerator({
           </div>
         </div>
 
-        <div className="mb-6">
-          <Label>Assignment Type</Label>
-          <Tabs 
-            defaultValue="election" 
-            className="mt-2" 
-            onValueChange={(value) => setAssignmentType(value as 'election' | 'electionGroup')}
-          >
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="election">Single Election</TabsTrigger>
-              <TabsTrigger value="electionGroup">Election Group</TabsTrigger>
-            </TabsList>
+        {!fixedElectionId && (
+          <div className="mb-6">
+            <Label>Assignment Type</Label>
+            <Tabs 
+              defaultValue="election" 
+              className="mt-2" 
+              onValueChange={(value) => setAssignmentType(value as 'election' | 'electionGroup')}
+            >
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="election">Single Election</TabsTrigger>
+                <TabsTrigger value="electionGroup">Election Group</TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="election" className="mt-4">
-              <Label htmlFor="electionAccess">Assign to Election</Label>
-              <div className="space-y-2 mt-2">
-                {elections && elections.map((election) => {
-                  const id = election?._id?.toString() || 
-                            (typeof election?.id === 'object' ? election.id?.toString() : 
-                            (election?.id ? String(election.id) : ''));
+              <TabsContent value="election" className="mt-4">
+                <Label htmlFor="electionAccess">Assign to Election</Label>
+                <div className="space-y-2 mt-2">
+                  {elections && elections.map((election) => {
+                    const id = election?._id?.toString() || 
+                              (typeof election?.id === 'object' ? election.id?.toString() : 
+                              (election?.id ? String(election.id) : ''));
 
-                  if (!id) return null;
-                  return (
-                    <div key={id} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`election-${id}`}
-                        value={id}
-                        checked={selectedElections.includes(id)}
-                        onChange={handleElectionChange}
-                        disabled={isGenerating}
-                        className="h-4 w-4 rounded border-gray-300"
-                      />
-                      <label htmlFor={`election-${id}`} className="text-sm">
-                        {election?.title || 'Untitled'} - {election?.organization || 'Organization'}
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {selectedElections.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-sm text-gray-600">
-                    Voters will be assigned to {selectedElections.length} election(s)
-                  </p>
+                    if (!id) return null;
+                    return (
+                      <div key={id} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id={`election-${id}`}
+                          value={id}
+                          checked={selectedElections.includes(id)}
+                          onChange={handleElectionChange}
+                          disabled={isGenerating}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                        <label htmlFor={`election-${id}`} className="text-sm">
+                          {election?.title || 'Untitled'} - {election?.organization || 'Organization'}
+                        </label>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </TabsContent>
 
-            <TabsContent value="electionGroup" className="mt-4">
-              <Label htmlFor="electionGroupAccess">Assign to Election Group</Label>
-              <Select onValueChange={handleElectionGroupChange} disabled={isGenerating}>
-                <SelectTrigger id="electionGroupAccess" className="mt-1">
-                  <SelectValue placeholder="Select an election group" />
-                </SelectTrigger>
-                <SelectContent>
-                  {electionGroups && electionGroups.length > 0 ? (
-                    electionGroups.map((group) => {
-                      // Handle both MongoDB and regular ID formats safely
-                      const id = group?._id?.toString() || 
-                                (typeof group?.id === 'object' ? group.id?.toString() : 
-                                (group?.id ? String(group.id) : ''));
+                {selectedElections.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-sm text-gray-600">
+                      Voters will be assigned to {selectedElections.length} election(s)
+                    </p>
+                  </div>
+                )}
+              </TabsContent>
 
-                      if (!id) return null;
-                      return (
-                        <SelectItem key={id} value={id}>
-                          {group?.name || 'Untitled Group'}
-                        </SelectItem>
-                      );
-                    })
-                  ) : (
-                    <SelectItem value="none" disabled>No election groups available</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
+              <TabsContent value="electionGroup" className="mt-4">
+                <Label htmlFor="electionGroupAccess">Assign to Election Group</Label>
+                <Select onValueChange={handleElectionGroupChange} disabled={isGenerating}>
+                  <SelectTrigger id="electionGroupAccess" className="mt-1">
+                    <SelectValue placeholder="Select an election group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {electionGroups && electionGroups.length > 0 ? (
+                      electionGroups.map((group) => {
+                        // Handle both MongoDB and regular ID formats safely
+                        const id = group?._id?.toString() || 
+                                  (typeof group?.id === 'object' ? group.id?.toString() : 
+                                  (group?.id ? String(group.id) : ''));
 
-              {selectedElectionGroupId && (
-                <div className="mt-2">
-                  <p className="text-sm text-gray-600">
-                    Voters will be assigned to all elections in this group
-                  </p>
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        </div>
+                        if (!id) return null;
+                        return (
+                          <SelectItem key={id} value={id}>
+                            {group?.name || 'Untitled Group'}
+                          </SelectItem>
+                        );
+                      })
+                    ) : (
+                      <SelectItem value="none" disabled>No election groups available</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+
+                {selectedElectionGroupId && (
+                  <div className="mt-2">
+                    <p className="text-sm text-gray-600">
+                      Voters will be assigned to all elections in this group
+                    </p>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+        )}
 
 
 

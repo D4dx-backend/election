@@ -41,6 +41,10 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
+    // Capture the previous login time BEFORE overwriting it, so the client
+    // can greet the user with their last login.
+    const previousLogin = user.lastLogin || null;
+
     // Update last login
     await User.findByIdAndUpdate(user._id, { lastLogin: new Date() });
 
@@ -59,6 +63,7 @@ exports.login = async (req, res) => {
         isVoter: user.isVoter,
         onboardingCompleted: user.onboardingCompleted,
         status: user.status,
+        lastLogin: previousLogin,
       },
     });
   } catch (err) {

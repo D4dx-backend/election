@@ -31,7 +31,50 @@ export function RecentElectionsTable({ elections }: RecentElectionsTableProps) {
         </Link>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
+        <div className="divide-y divide-gray-100 md:hidden">
+          {elections.map((election) => {
+            const electionId = (election as any)._id?.toString() || (election as any).id?.toString();
+            const totalVoters = election.analytics?.totalVoters || 0;
+            const totalVotesCast = election.analytics?.totalVotesCast || 0;
+            const participationPercentage = totalVoters > 0 
+              ? Math.round((totalVotesCast / totalVoters) * 100) 
+              : 0;
+
+            return (
+              <div key={electionId} className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-gray-900 truncate">{election.title}</h3>
+                    <p className="text-sm text-gray-500 truncate">{election.organization}</p>
+                  </div>
+                  <StatusBadge status={election.status} />
+                </div>
+                <div className="grid grid-cols-2 gap-3 rounded-md bg-gray-50 p-3 text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500">Date</p>
+                    <p className="font-medium text-gray-900">{format(new Date(election.electionDate), 'yyyy-MM-dd')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Participation</p>
+                    <p className="font-medium text-gray-900">{participationPercentage}% ({totalVotesCast}/{totalVoters})</p>
+                  </div>
+                </div>
+                <Progress value={participationPercentage} className="h-2.5" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link href={`/elections/${electionId}`}>
+                    <Button variant="outline" size="sm">View</Button>
+                  </Link>
+                  <Link href={`/elections/${electionId}/edit`}>
+                    <Button variant="ghost" size="sm">
+                      {election.status === 'completed' ? 'Results' : 'Edit'}
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -45,6 +88,7 @@ export function RecentElectionsTable({ elections }: RecentElectionsTableProps) {
             </TableHeader>
             <TableBody>
               {elections.map((election) => {
+                const electionId = (election as any)._id?.toString() || (election as any).id?.toString();
                 const totalVoters = election.analytics?.totalVoters || 0;
                 const totalVotesCast = election.analytics?.totalVotesCast || 0;
                 const participationPercentage = totalVoters > 0 
@@ -52,7 +96,7 @@ export function RecentElectionsTable({ elections }: RecentElectionsTableProps) {
                   : 0;
 
                 return (
-                  <TableRow key={election.id} className="hover:bg-gray-50">
+                  <TableRow key={electionId} className="transition-colors hover:bg-gray-50">
                     <TableCell className="font-medium">
                       {election.title}
                     </TableCell>
@@ -74,12 +118,12 @@ export function RecentElectionsTable({ elections }: RecentElectionsTableProps) {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Link href={`/elections/${election.id}`}>
+                      <Link href={`/elections/${electionId}`}>
                         <Button variant="link" className="text-primary hover:text-primary-dark mr-3">
                           View
                         </Button>
                       </Link>
-                      <Link href={`/elections/${election.id}/edit`}>
+                      <Link href={`/elections/${electionId}/edit`}>
                         <Button variant="link" className="text-gray-600 hover:text-gray-900">
                           {election.status === 'completed' ? 'Results' : 'Edit'}
                         </Button>

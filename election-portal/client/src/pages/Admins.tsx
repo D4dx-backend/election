@@ -1,12 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import MainLayout from "@/components/layouts/MainLayout";
-import { 
-  Tabs, 
-  TabsContent, 
-  TabsList, 
-  TabsTrigger 
-} from "@/components/ui/tabs";
+import { MainLayout } from "@/components/layout/MainLayout";
 import { 
   Card, 
   CardContent, 
@@ -63,7 +57,6 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 const franchiseAdminSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  email: z.string().email("Please enter a valid email").optional().or(z.literal("")),
   fullName: z.string().optional().or(z.literal("")),
   franchiseId: z.string().min(1, "Please select a franchise")
 });
@@ -72,7 +65,6 @@ const franchiseAdminSchema = z.object({
 const electionAdminSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  email: z.string().email("Please enter a valid email").optional().or(z.literal("")),
   fullName: z.string().optional().or(z.literal("")),
   franchiseId: z.string().min(1, "Please select a franchise"),
   electionAccess: z.array(z.string()).min(1, "Please select at least one election")
@@ -81,9 +73,33 @@ const electionAdminSchema = z.object({
 type FranchiseAdminFormValues = z.infer<typeof franchiseAdminSchema>;
 type ElectionAdminFormValues = z.infer<typeof electionAdminSchema>;
 
+type ListResponse<T> = { data: T[] };
+
+interface AdminFranchiseOption {
+  _id: string;
+  id?: string | number;
+  name: string;
+}
+
+interface AdminElectionOption {
+  _id: string;
+  id?: string | number;
+  title: string;
+  organization?: string;
+  franchiseId: string | { _id?: string; toString: () => string };
+}
+
+interface FranchiseAdminUser {
+  _id: string;
+  username: string;
+  fullName?: string;
+  status?: string;
+  franchiseDetails?: { name?: string };
+}
+
 export default function Admins() {
-  const [createFranchiseAdminOpen, setCreateFranchiseAdminOpen] = useState(false);
-  const [createElectionAdminOpen, setCreateElectionAdminOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [adminType, setAdminType] = useState<'franchise' | 'election'>('election');
   const [selectedFranchiseId, setSelectedFranchiseId] = useState<string>("");
   const { toast } = useToast();
   
@@ -92,6 +108,8 @@ export default function Admins() {
   const userData = userDataString ? JSON.parse(userDataString) : null;
   const userRole = userData?.role || '';
   const userFranchiseId = userData?.franchiseId || '';
+  // Only super admins may create franchise administrators
+  const canCreateFranchiseAdmin = userRole === 'super_admin';
   
   // --- Fetch data ---
   
@@ -100,7 +118,7 @@ export default function Admins() {
     data: franchises, 
     isLoading: franchisesLoading,
     isError: franchisesError
-  } = useQuery({
+  } = useQuery<ListResponse<AdminFranchiseOption>>({
     queryKey: ['/api/franchises']
   });
   
@@ -109,7 +127,7 @@ export default function Admins() {
     data: franchiseAdmins,
     isLoading: franchiseAdminsLoading,
     isError: franchiseAdminsError
-  } = useQuery({
+  } = useQuery<ListResponse<FranchiseAdminUser>>({
     queryKey: ['/api/users/franchise-admins']
   });
   
@@ -118,7 +136,7 @@ export default function Admins() {
     data: elections,
     isLoading: electionsLoading,
     isError: electionsError
-  } = useQuery({
+  } = useQuery<ListResponse<AdminElectionOption>>({
     queryKey: ['/api/elections'],
     enabled: true // Always fetch elections, we'll filter them in the component
   });
@@ -131,7 +149,6 @@ export default function Admins() {
     defaultValues: {
       username: "",
       password: "",
-      email: "",
       fullName: "",
       franchiseId: ""
     }
@@ -143,7 +160,6 @@ export default function Admins() {
     defaultValues: {
       username: "",
       password: "",
-      email: "",
       fullName: "",
       franchiseId: userRole === 'franchise_admin' ? userFranchiseId : "",
       electionAccess: []
@@ -174,9 +190,10 @@ export default function Admins() {
       console.log("Admin created successfully:", data);
       toast({
         title: "Administrator created",
-        description: "Franchise administrator has been created successfully"
+        description: "Franchise administrator has been created successfully",
+        variant: "success"
       });
-      setCreateFranchiseAdminOpen(false);
+      setCreateOpen(false);
       franchiseAdminForm.reset();
       queryClient.invalidateQueries({ queryKey: ['/api/users/franchise-admins'] });
     },
@@ -197,9 +214,10 @@ export default function Admins() {
     onSuccess: () => {
       toast({
         title: "Administrator created",
-        description: "Election administrator has been created successfully"
+        description: "Election administrator has been created successfully",
+        variant: "success"
       });
-      setCreateElectionAdminOpen(false);
+      setCreateOpen(false);
       electionAdminForm.reset();
       setSelectedFranchiseId("");
     },
@@ -229,7 +247,8 @@ export default function Admins() {
     onSuccess: () => {
       toast({
         title: "Password reset",
-        description: "Administrator password has been reset successfully"
+        description: "Administrator password has been reset successfully",
+        variant: "success"
       });
       queryClient.invalidateQueries({ queryKey: ['/api/users/franchise-admins'] });
     },
@@ -243,156 +262,298 @@ export default function Admins() {
   });
   
   useEffect(() => {
-    document.title = "Administrators | ElectManager";
+    document.title = "Administrators | Vote+";
   }, []);
   
   return (
     <MainLayout>
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Administrators</h1>
           <p className="text-sm text-gray-600">Manage system administrators</p>
         </div>
+
+        {/* Single unified create flow: asks for the administrator type, then shows matching fields */}
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={() => setAdminType(canCreateFranchiseAdmin ? 'franchise' : 'election')}>
+              <PlusIcon className="h-4 w-4 mr-2" />
+              Create Administrator
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Create Administrator</DialogTitle>
+              <DialogDescription>
+                Choose which type of administrator to create, then fill in their details.
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Administrator type selector */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Administrator Type</label>
+              <Select
+                value={adminType}
+                onValueChange={(v) => setAdminType(v as 'franchise' | 'election')}
+                disabled={!canCreateFranchiseAdmin}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {canCreateFranchiseAdmin && (
+                    <SelectItem value="franchise">Franchise Administrator</SelectItem>
+                  )}
+                  <SelectItem value="election">Election Administrator</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500">
+                {adminType === 'franchise'
+                  ? 'Can manage an entire franchise and its elections.'
+                  : 'Can manage only the elections assigned to them.'}
+              </p>
+            </div>
+
+            {adminType === 'franchise' ? (
+              <Form {...franchiseAdminForm}>
+                <form onSubmit={franchiseAdminForm.handleSubmit(onSubmitFranchiseAdmin)} className="space-y-4">
+                  <FormField
+                    control={franchiseAdminForm.control}
+                    name="username"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Username</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={franchiseAdminForm.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Password</FormLabel>
+                        <FormControl>
+                          <Input type="password" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={franchiseAdminForm.control}
+                    name="fullName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Full Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={franchiseAdminForm.control}
+                    name="franchiseId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Franchise</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a franchise" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {franchises?.data?.map((franchise) => (
+                              <SelectItem
+                                key={franchise._id || `franchise-${franchise.id}`}
+                                value={String(franchise._id || franchise.id)}
+                              >
+                                {franchise.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <DialogFooter>
+                    <Button type="submit" disabled={createFranchiseAdminMutation.isPending}>
+                      {createFranchiseAdminMutation.isPending ? "Creating..." : "Create Admin"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            ) : (
+              <Form {...electionAdminForm}>
+                <form onSubmit={electionAdminForm.handleSubmit(onSubmitElectionAdmin)} className="space-y-4">
+                  <FormField
+                    control={electionAdminForm.control}
+                    name="username"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Username</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={electionAdminForm.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Password</FormLabel>
+                        <FormControl>
+                          <Input type="password" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={electionAdminForm.control}
+                      name="fullName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Full Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  {/* Only show franchise selector if user is not a franchise admin */}
+                  {userRole !== 'franchise_admin' ? (
+                    <FormField
+                      control={electionAdminForm.control}
+                      name="franchiseId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Franchise</FormLabel>
+                          <Select
+                            onValueChange={(value) => {
+                              field.onChange(value);
+                              setSelectedFranchiseId(value);
+                            }}
+                            defaultValue={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a franchise" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {franchises?.data?.map((franchise) => (
+                                <SelectItem
+                                  key={franchise._id || `franchise-${franchise.id}`}
+                                    value={String(franchise._id || franchise.id)}
+                                >
+                                  {franchise.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>
+                            Select a franchise to see available elections
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : null}
+                  {selectedFranchiseId && (
+                    <FormField
+                      control={electionAdminForm.control}
+                      name="electionAccess"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Elections</FormLabel>
+                          <div className="border rounded-md p-4 space-y-2">
+                            {electionsLoading ? (
+                              <Skeleton className="h-20 w-full" />
+                            ) : elections && elections.data && elections.data.length > 0 ? (
+                              elections.data
+                                .filter(election => {
+                                  const electionFranchiseId =
+                                    typeof election.franchiseId === 'object' && election.franchiseId?._id
+                                      ? election.franchiseId._id.toString()
+                                      : (typeof election.franchiseId === 'object'
+                                          ? election.franchiseId.toString()
+                                          : String(election.franchiseId));
+                                  return electionFranchiseId === selectedFranchiseId;
+                                })
+                                .map(election => {
+                                  const electionId = String(election._id || election.id);
+                                  return (
+                                  <div key={electionId} className="flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      id={`election-${electionId}`}
+                                      value={electionId}
+                                      checked={field.value.includes(electionId)}
+                                      onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        const value = e.target.value;
+                                        if (checked) {
+                                          field.onChange([...field.value, value]);
+                                        } else {
+                                          field.onChange(field.value.filter(v => v !== value));
+                                        }
+                                      }}
+                                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                    />
+                                    <label htmlFor={`election-${electionId}`} className="text-sm font-medium text-gray-700">
+                                      {election.title}{election.organization ? ` - ${election.organization}` : ""}
+                                    </label>
+                                  </div>
+                                );
+                                })
+                            ) : (
+                              <p className="text-sm text-gray-500">
+                                No elections found for this franchise
+                              </p>
+                            )}
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                  <DialogFooter>
+                    <Button type="submit" disabled={createElectionAdminMutation.isPending}>
+                      {createElectionAdminMutation.isPending ? "Creating..." : "Create Admin"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
       
-      <Tabs defaultValue={userRole === 'super_admin' ? "franchiseAdmins" : "electionAdmins"}>
-        <TabsList>
-          {/* Only super admins can see the franchise administrators tab */}
-          {userRole === 'super_admin' && (
-            <TabsTrigger value="franchiseAdmins">Franchise Administrators</TabsTrigger>
-          )}
-          <TabsTrigger value="electionAdmins">Election Administrators</TabsTrigger>
-        </TabsList>
-        
-        {/* Franchise Administrators Tab */}
-        <TabsContent value="franchiseAdmins">
+      <div className="space-y-6">
+        {/* Franchise Administrators (super admins only) */}
+        {canCreateFranchiseAdmin && (
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader>
               <div>
                 <CardTitle>Franchise Administrators</CardTitle>
                 <CardDescription>
                   Manage administrators who can control franchises
                 </CardDescription>
               </div>
-              
-              {userRole !== 'franchise_admin' && (
-                <Dialog open={createFranchiseAdminOpen} onOpenChange={setCreateFranchiseAdminOpen}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <PlusIcon className="h-4 w-4 mr-2" />
-                      Create Franchise Admin
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Create Franchise Administrator</DialogTitle>
-                      <DialogDescription>
-                        Add a new administrator for a franchise
-                      </DialogDescription>
-                    </DialogHeader>
-                    
-                    <Form {...franchiseAdminForm}>
-                      <form onSubmit={franchiseAdminForm.handleSubmit(onSubmitFranchiseAdmin)} className="space-y-4">
-                        <FormField
-                          control={franchiseAdminForm.control}
-                          name="username"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Username</FormLabel>
-                              <FormControl>
-                                <Input {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <FormField
-                          control={franchiseAdminForm.control}
-                          name="password"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Password</FormLabel>
-                              <FormControl>
-                                <Input type="password" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <FormField
-                          control={franchiseAdminForm.control}
-                          name="fullName"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Full Name</FormLabel>
-                              <FormControl>
-                                <Input {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <FormField
-                          control={franchiseAdminForm.control}
-                          name="email"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Email</FormLabel>
-                              <FormControl>
-                                <Input type="email" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <FormField
-                          control={franchiseAdminForm.control}
-                          name="franchiseId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Franchise</FormLabel>
-                              <Select
-                                onValueChange={field.onChange}
-                                defaultValue={field.value}
-                              >
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select a franchise" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {franchises?.data?.map((franchise) => (
-                                    <SelectItem 
-                                      key={franchise._id || `franchise-${franchise.id}`} 
-                                      value={franchise._id || franchise.id?.toString()}
-                                    >
-                                      {franchise.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <DialogFooter>
-                          <Button 
-                            type="submit" 
-                            disabled={createFranchiseAdminMutation.isPending}
-                          >
-                            {createFranchiseAdminMutation.isPending ? "Creating..." : "Create Admin"}
-                          </Button>
-                        </DialogFooter>
-                      </form>
-                    </Form>
-                  </DialogContent>
-                </Dialog>
-              )}
             </CardHeader>
             <CardContent>
               {franchiseAdminsError && (
@@ -411,25 +572,68 @@ export default function Admins() {
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
                 </div>
-              ) : (
+              ) : franchiseAdmins && franchiseAdmins.data && franchiseAdmins.data.length > 0 ? (
+                <>
+                <div className="divide-y divide-gray-100 md:hidden">
+                  {franchiseAdmins.data.map((admin) => (
+                    <div key={admin._id} className="py-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="font-semibold text-gray-900 truncate">{admin.username}</h3>
+                          <p className="text-sm text-gray-500 truncate">{admin.fullName || '-'}</p>
+                        </div>
+                        <Badge
+                          variant={admin.status === 'active' ? 'outline' : 'secondary'}
+                          className={
+                            admin.status === 'active' 
+                              ? 'bg-green-100 text-green-800 hover:bg-green-100' 
+                              : 'bg-gray-100 text-gray-800 hover:bg-gray-100'
+                          }
+                        >
+                          {admin.status === 'active' ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </div>
+                      <div className="rounded-md bg-gray-50 p-3 text-sm">
+                        <p className="text-xs text-gray-500">Franchise</p>
+                        <p className="font-medium text-gray-900">{admin.franchiseDetails ? admin.franchiseDetails.name : '-'}</p>
+                      </div>
+                      <Button 
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const newPassword = prompt("Enter new password (minimum 6 characters):");
+                          if (newPassword && newPassword.length >= 6) {
+                            resetPasswordMutation.mutate({ id: admin._id, password: newPassword });
+                          } else if (newPassword) {
+                            toast({
+                              title: "Invalid password",
+                              description: "Password must be at least 6 characters",
+                              variant: "destructive"
+                            });
+                          }
+                        }}
+                      >
+                        Reset Password
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Username</TableHead>
                       <TableHead>Full Name</TableHead>
-                      <TableHead>Email</TableHead>
                       <TableHead>Franchise</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {franchiseAdmins && franchiseAdmins.data && franchiseAdmins.data.length > 0 ? (
-                      franchiseAdmins.data.map((admin) => (
+                    {franchiseAdmins.data.map((admin) => (
                         <TableRow key={admin._id}>
                           <TableCell className="font-medium">{admin.username}</TableCell>
                           <TableCell>{admin.fullName || '-'}</TableCell>
-                          <TableCell>{admin.email || '-'}</TableCell>
                           <TableCell>
                             {admin.franchiseDetails ? admin.franchiseDetails.name : '-'}
                           </TableCell>
@@ -465,236 +669,39 @@ export default function Admins() {
                             </Button>
                           </TableCell>
                         </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-4 text-gray-500">
-                          No franchise administrators found
-                        </TableCell>
-                      </TableRow>
-                    )}
+                      ))}
                   </TableBody>
                 </Table>
+                </div>
+                </>
+              ) : (
+                <div className="py-6 text-center text-sm text-gray-500">No franchise administrators found</div>
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-        
-        {/* Election Administrators Tab */}
-        <TabsContent value="electionAdmins">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Election Administrators</CardTitle>
-                <CardDescription>
-                  Manage administrators who can control specific elections
-                </CardDescription>
-              </div>
-              <Dialog open={createElectionAdminOpen} onOpenChange={setCreateElectionAdminOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <PlusIcon className="h-4 w-4 mr-2" />
-                    Create Election Admin
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-xl">
-                  <DialogHeader>
-                    <DialogTitle>Create Election Administrator</DialogTitle>
-                    <DialogDescription>
-                      Add a new administrator for specific elections
-                    </DialogDescription>
-                  </DialogHeader>
-                  
-                  <Form {...electionAdminForm}>
-                    <form onSubmit={electionAdminForm.handleSubmit(onSubmitElectionAdmin)} className="space-y-4">
-                      <FormField
-                        control={electionAdminForm.control}
-                        name="username"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Username</FormLabel>
-                            <FormControl>
-                              <Input {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      
-                      <FormField
-                        control={electionAdminForm.control}
-                        name="password"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Password</FormLabel>
-                            <FormControl>
-                              <Input type="password" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FormField
-                          control={electionAdminForm.control}
-                          name="fullName"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Full Name</FormLabel>
-                              <FormControl>
-                                <Input {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <FormField
-                          control={electionAdminForm.control}
-                          name="email"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Email</FormLabel>
-                              <FormControl>
-                                <Input type="email" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      
-                      {/* Only show franchise selector if user is not a franchise admin */}
-                      {userRole !== 'franchise_admin' ? (
-                        <FormField
-                          control={electionAdminForm.control}
-                          name="franchiseId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Franchise</FormLabel>
-                              <Select
-                                onValueChange={(value) => {
-                                  field.onChange(value);
-                                  setSelectedFranchiseId(value);
-                                }}
-                                defaultValue={field.value}
-                              >
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select a franchise" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {franchises?.data?.map((franchise) => (
-                                    <SelectItem 
-                                      key={franchise._id || `franchise-${franchise.id}`} 
-                                      value={franchise._id || franchise.id?.toString()}
-                                    >
-                                      {franchise.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormDescription>
-                                Select a franchise to see available elections
-                              </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      ) : null}
-                      
-                      {selectedFranchiseId && (
-                        <FormField
-                          control={electionAdminForm.control}
-                          name="electionAccess"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Elections</FormLabel>
-                              <div className="border rounded-md p-4 space-y-2">
-                                {electionsLoading ? (
-                                  <Skeleton className="h-20 w-full" />
-                                ) : elections && elections.data && elections.data.length > 0 ? (
-                                  elections.data
-                                    .filter(election => {
-                                      // For franchise admin, ensure we're comparing MongoDB ObjectIDs correctly
-                                      const electionFranchiseId = 
-                                        typeof election.franchiseId === 'object' && election.franchiseId?._id 
-                                          ? election.franchiseId._id.toString() 
-                                          : (typeof election.franchiseId === 'object' 
-                                              ? election.franchiseId.toString() 
-                                              : String(election.franchiseId));
-                                      
-                                      // Debug to console to see what's happening
-                                      console.log('Comparing:', {
-                                        electionFranchiseId,
-                                        selectedFranchiseId,
-                                        match: electionFranchiseId === selectedFranchiseId
-                                      });
-                                      
-                                      return electionFranchiseId === selectedFranchiseId;
-                                    })
-                                    .map(election => (
-                                      <div key={election._id || election.id} className="flex items-center space-x-2">
-                                        <input
-                                          type="checkbox"
-                                          id={`election-${election._id || election.id}`}
-                                          value={election._id || election.id}
-                                          checked={field.value.includes(election._id || election.id)}
-                                          onChange={(e) => {
-                                            const checked = e.target.checked;
-                                            const value = e.target.value;
-                                            if (checked) {
-                                              field.onChange([...field.value, value]);
-                                            } else {
-                                              field.onChange(field.value.filter(v => v !== value));
-                                            }
-                                          }}
-                                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                                        />
-                                        <label htmlFor={`election-${election._id}`} className="text-sm font-medium text-gray-700">
-                                          {election.title} - {election.organization}
-                                        </label>
-                                      </div>
-                                    ))
-                                ) : (
-                                  <p className="text-sm text-gray-500">
-                                    No elections found for this franchise
-                                  </p>
-                                )}
-                              </div>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      )}
-                      
-                      <DialogFooter>
-                        <Button 
-                          type="submit" 
-                          disabled={createElectionAdminMutation.isPending}
-                        >
-                          {createElectionAdminMutation.isPending ? "Creating..." : "Create Admin"}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
-            </CardHeader>
-            <CardContent>
-              <Alert>
-                <AlertTitle>Election Administrators Management</AlertTitle>
-                <AlertDescription>
-                  Election administrators can be created to manage specific elections within a franchise.
-                  They have limited access only to the elections assigned to them.
-                </AlertDescription>
-              </Alert>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+        )}
+
+        {/* Election Administrators */}
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Election Administrators</CardTitle>
+              <CardDescription>
+                Manage administrators who can control specific elections
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Alert>
+              <AlertTitle>Election Administrators Management</AlertTitle>
+              <AlertDescription>
+                Election administrators can be created to manage specific elections within a franchise.
+                They have limited access only to the elections assigned to them.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+      </div>
     </MainLayout>
   );
 }

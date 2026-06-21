@@ -4,9 +4,13 @@ const {
   getElectionAnalytics,    // For getting all analytics
   getElectionAnalytic,     // For getting a single analytic by ID
   updateElectionAnalytics, 
-  deleteElectionAnalytics 
+  deleteElectionAnalytics,
+  getDashboardStats        // Aggregated dashboard statistics
 } = require("../controllers/electionAnalytics"); // Ensure this path is correct
 const { protect } = require("../middleware/auth"); // Ensure this path is correct and auth.js exports protect
+
+// Aggregated dashboard statistics (must be declared before "/:id")
+router.get("/dashboard", protect, getDashboardStats);
 
 // Routes for the collection (e.g., /api/v1/election-analytics)
 router

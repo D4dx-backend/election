@@ -1,4 +1,5 @@
 const ElectionGroup = require("../model/ElectionGroup");
+const { logUserActivity } = require("../utils/auditLog");
 
 // @desc      ADD ELECTION GROUP
 // @route     POST /api/v1/election-groups
@@ -46,7 +47,34 @@ exports.deleteElectionGroupById = async (req, res) => {
 // @access    Protected
 exports.getElectionGroups = async (req, res) => {
   try {
-    const electionGroups = await ElectionGroup.find();
+    // Scope by role so franchise admins only see their own groups
+    const filter = {};
+    const user = req.user || {};
+    if (user.role === "franchise_admin") {
+      filter.franchiseId = user.franchiseId;
+    } else if (req.query.franchiseId) {
+      filter.franchiseId = req.query.franchiseId;
+    }
+
+    // Opt-in server-side pagination (only when ?page is provided)
+    if (req.query.page !== undefined) {
+      const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+      const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
+      const total = await ElectionGroup.countDocuments(filter);
+      const paged = await ElectionGroup.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
+      const totalPages = Math.max(Math.ceil(total / limit), 1);
+      return res.status(200).json({
+        success: true,
+        count: paged.length,
+        pagination: { total, page, pageSize: limit, totalPages },
+        data: paged,
+      });
+    }
+
+    const electionGroups = await ElectionGroup.find(filter);
     res.status(200).json({ success: true, count: electionGroups.length, data: electionGroups });
   } catch (err) {
     console.error(err);

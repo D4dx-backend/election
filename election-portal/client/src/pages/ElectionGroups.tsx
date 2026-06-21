@@ -35,6 +35,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PaginationControls } from "@/components/ui/pagination-controls";
+import { Pagination } from "@/lib/types";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,10 +48,51 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+type EntityRef = string | number | { _id?: string; toString: () => string };
+
+interface ElectionGroupRecord {
+  _id?: string;
+  id?: string | number;
+  name: string;
+  description?: string;
+  franchiseId?: EntityRef;
+  createdAt?: string | Date;
+}
+
+interface FranchiseOption {
+  _id?: string;
+  id?: string | number;
+  name: string;
+}
+
+interface ElectionOption {
+  _id?: string;
+  id?: string | number;
+  franchiseId?: EntityRef;
+  electionGroupId?: EntityRef;
+}
+
+interface AuthMeResponse {
+  user?: {
+    franchiseId?: string;
+    role?: string;
+  };
+}
+
+function getEntityId(value?: EntityRef): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object") {
+    return value._id?.toString() || value.toString();
+  }
+  return value.toString();
+}
+
 export default function ElectionGroups() {
   const [open, setOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   // Get the user data to get franchiseId for admins
-  const { data: userData } = useQuery({ queryKey: ['/api/auth/me'] });
+  const { data: userData } = useQuery<AuthMeResponse>({ queryKey: ['/api/auth/me'] });
   const userFranchiseId = userData?.user?.franchiseId;
   const userRole = userData?.user?.role;
 
@@ -69,19 +112,25 @@ export default function ElectionGroups() {
     isLoading: electionGroupsLoading,
     isError: electionGroupsError,
     refetch: refetchElectionGroups
-  } = useQuery({
-    queryKey: ['/api/election-groups']
+  } = useQuery<{ data: ElectionGroupRecord[]; pagination?: Pagination }>({
+    queryKey: ['/api/election-groups', page],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/election-groups?page=${page}&limit=${pageSize}`);
+      return res.json();
+    },
+    placeholderData: (prev) => prev,
   });
   
   // Extract the actual groups from the response
   const electionGroupsData = electionGroupsRawData?.data || [];
+  const electionGroupsPagination = electionGroupsRawData?.pagination;
 
   // Fetch franchises with proper response handling
   const {
     data: franchisesRawData,
     isLoading: franchisesLoading,
     isError: franchisesError
-  } = useQuery({
+  } = useQuery<{ data: FranchiseOption[] }>({
     queryKey: ['/api/franchises']
   });
   
@@ -93,7 +142,7 @@ export default function ElectionGroups() {
     data: electionsRawData,
     isLoading: electionsLoading,
     isError: electionsError
-  } = useQuery({
+  } = useQuery<{ data: ElectionOption[] }>({
     queryKey: ['/api/elections']
   });
   
@@ -102,16 +151,14 @@ export default function ElectionGroups() {
 
   // Now we need to get the data from the raw response
   // The API returns the data in the raw response directly as an array
-  const allElectionGroups = electionGroupsRawData || [];
+  const allElectionGroups = electionGroupsRawData?.data || [];
   const franchises = franchisesRawData?.data || [];
   const elections = electionsRawData?.data || [];
   
   // Filter election groups based on user role and franchise
   const electionGroups = userRole === 'franchise_admin'
     ? allElectionGroups.filter(group => {
-        const groupFranchiseId = group.franchiseId?._id?.toString() || 
-                                group.franchiseId?.toString() || 
-                                String(group.franchiseId);
+        const groupFranchiseId = getEntityId(group.franchiseId);
         return groupFranchiseId === userFranchiseId;
       })
     : allElectionGroups;
@@ -143,7 +190,8 @@ export default function ElectionGroups() {
     onSuccess: () => {
       toast({
         title: "Group created",
-        description: "New election group has been created successfully"
+        description: "New election group has been created successfully",
+        variant: "success"
       });
       setOpen(false);
       queryClient.invalidateQueries({ queryKey: ['/api/election-groups'] });
@@ -166,7 +214,8 @@ export default function ElectionGroups() {
     onSuccess: () => {
       toast({
         title: "Group updated",
-        description: "Election group has been updated successfully"
+        description: "Election group has been updated successfully",
+        variant: "success"
       });
       setIsEditOpen(false);
       setEditFormData({ id: '', name: '', description: '' });
@@ -189,7 +238,8 @@ export default function ElectionGroups() {
     onSuccess: () => {
       toast({
         title: "Group deleted",
-        description: "Election group has been deleted successfully"
+        description: "Election group has been deleted successfully",
+        variant: "success"
       });
       setDeleteGroupId(null);
       queryClient.invalidateQueries({ queryKey: ['/api/election-groups'] });
@@ -235,7 +285,7 @@ export default function ElectionGroups() {
   const handleEditGroup = (id: string) => {
     // Find the group to edit
     const group = electionGroups.find(g => {
-      const groupId = g._id?.toString() || g.id?.toString();
+      const groupId = getEntityId(g._id || g.id);
       return groupId === id;
     });
 
@@ -267,9 +317,7 @@ export default function ElectionGroups() {
   // Count elections in each group
   const getElectionCount = (groupId: string) => {
     return elections?.filter(e => {
-      const eGroupId = e.electionGroupId?._id?.toString() ||
-        e.electionGroupId?.toString() ||
-        String(e.electionGroupId);
+      const eGroupId = getEntityId(e.electionGroupId);
       return eGroupId === groupId;
     }).length || 0;
   };
@@ -284,7 +332,7 @@ export default function ElectionGroups() {
   };
 
   useEffect(() => {
-    document.title = "Election Groups | ElectManager";
+    document.title = "Election Groups | Vote+";
   }, []);
 
   return (
@@ -352,7 +400,7 @@ export default function ElectionGroups() {
                         </SelectTrigger>
                         <SelectContent>
                           {franchises.map((franchise) => {
-                            const id = franchise._id?.toString() || franchise.id?.toString();
+                            const id = getEntityId(franchise._id || franchise.id);
                             return (
                               <SelectItem key={id} value={id}>
                                 {franchise.name}
@@ -491,7 +539,50 @@ export default function ElectionGroups() {
             <div className="p-6 text-center">Loading groups...</div>
           ) : electionGroups && electionGroups.length > 0 ? (
             <div className="space-y-6">
-              {/* Simple list view of all election groups */}
+              <div className="divide-y divide-gray-100 md:hidden">
+                {electionGroups.map((group) => {
+                  const groupId = getEntityId(group._id || group.id);
+                  const franchiseId = getEntityId(group.franchiseId);
+                  const franchise = franchises.find(f => 
+                    getEntityId(f._id || f.id) === franchiseId
+                  );
+
+                  return (
+                    <div key={groupId} className="p-4 space-y-3">
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-gray-900 truncate">{group.name}</h3>
+                        <p className="text-sm text-gray-500 line-clamp-2">{group.description || 'No description'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 rounded-md bg-gray-50 p-3 text-sm">
+                        <div>
+                          <p className="text-xs text-gray-500">Franchise</p>
+                          <p className="font-medium text-gray-900 truncate">{franchise?.name || 'Unknown franchise'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Created</p>
+                          <p className="font-medium text-gray-900">
+                            {group.createdAt ? new Date(group.createdAt).toLocaleDateString() : 'Not available'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => handleEditGroup(groupId)}>
+                          <Pencil className="h-4 w-4 mr-1" /> Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-900 hover:bg-red-50"
+                          onClick={() => handleDeleteGroup(groupId)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" /> Delete
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="hidden md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -504,15 +595,13 @@ export default function ElectionGroups() {
                 </TableHeader>
                 <TableBody>
                   {electionGroups.map((group) => {
-                    const groupId = group._id?.toString() || group.id?.toString();
+                    const groupId = getEntityId(group._id || group.id);
                     
                     // Find franchise name
-                    const franchiseId = typeof group.franchiseId === 'object' 
-                      ? (group.franchiseId?._id?.toString() || group.franchiseId?.toString())
-                      : group.franchiseId?.toString();
+                    const franchiseId = getEntityId(group.franchiseId);
                       
                     const franchise = franchises.find(f => 
-                      (f._id?.toString() || f.id?.toString()) === franchiseId
+                      getEntityId(f._id || f.id) === franchiseId
                     );
                     
                     return (
@@ -549,6 +638,7 @@ export default function ElectionGroups() {
                   })}
                 </TableBody>
               </Table>
+              </div>
             </div>
           ) : (
             <div className="p-12 text-center">
@@ -564,6 +654,17 @@ export default function ElectionGroups() {
                 <PlusIcon className="h-4 w-4 mr-2" />
                 Create Group
               </Button>
+            </div>
+          )}
+          {electionGroupsPagination && electionGroupsPagination.total > 0 && (
+            <div className="px-6 pb-4">
+              <PaginationControls
+                page={electionGroupsPagination.page}
+                totalPages={electionGroupsPagination.totalPages ?? 1}
+                total={electionGroupsPagination.total}
+                pageSize={electionGroupsPagination.pageSize}
+                onPageChange={setPage}
+              />
             </div>
           )}
         </CardContent>

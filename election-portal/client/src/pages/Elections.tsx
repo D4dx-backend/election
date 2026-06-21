@@ -5,10 +5,11 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { ElectionFilters } from "@/components/elections/ElectionFilters";
 import { ElectionsTable } from "@/components/elections/ElectionsTable";
 import { Button } from "@/components/ui/button";
-import { PlusIcon, AlertCircle, UserPlus } from "lucide-react";
-import { ElectionFilter, ElectionWithDetails, Franchise } from "@/lib/types";
+import { PlusIcon, AlertCircle } from "lucide-react";
+import { ElectionFilter, ElectionWithDetails, Franchise, Pagination } from "@/lib/types";
 import { useCallback } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +26,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Elections() {
   const [filters, setFilters] = useState<ElectionFilter>({});
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const [deleteElectionId, setDeleteElectionId] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -69,15 +72,25 @@ export default function Elections() {
     }
   }, [userRole, userFranchiseId]);
 
-  // Fetch elections with filters applied
-  const { 
-    data: elections = [], 
-    isLoading: electionsLoading, 
+  // Fetch elections with filters + server-side pagination applied
+  const {
+    data: electionsResponse,
+    isLoading: electionsLoading,
     isError: electionsError,
     refetch: refetchElections
-  } = useQuery<ElectionWithDetails[]>({
-    queryKey: ['/api/elections', getQueryString()]
+  } = useQuery<{ data: ElectionWithDetails[]; pagination?: Pagination }>({
+    queryKey: ['/api/elections', getQueryString(), page],
+    queryFn: async () => {
+      const qs = getQueryString();
+      const sep = qs ? '&' : '?';
+      const res = await apiRequest('GET', `/api/elections${qs}${sep}page=${page}&limit=${pageSize}`);
+      return res.json();
+    },
+    placeholderData: (prev) => prev,
   });
+
+  const elections = electionsResponse?.data ?? [];
+  const electionsPagination = electionsResponse?.pagination;
 
   // Fetch franchises for filtering
   const { 
@@ -105,6 +118,7 @@ export default function Elections() {
       toast({
         title: "Status Updated",
         description: "Election status has been updated successfully.",
+        variant: "success",
       });
     } catch (error) {
       console.error('Error updating status:', error);
@@ -124,7 +138,8 @@ export default function Elections() {
     onSuccess: () => {
       toast({
         title: "Election deleted",
-        description: "The election has been successfully deleted"
+        description: "The election has been successfully deleted",
+        variant: "success"
       });
 
       // Invalidate and refetch elections
@@ -147,6 +162,7 @@ export default function Elections() {
     if (userRole === 'franchise_admin' && userFranchiseId) {
       newFilters.franchiseId = userFranchiseId;
     }
+    setPage(1);
     setFilters(newFilters);
   };
 
@@ -161,7 +177,7 @@ export default function Elections() {
   };
 
   useEffect(() => {
-    document.title = "Elections | ElectManager";
+    document.title = "Elections | Vote+";
   }, []);
 
   // Get filtered elections based on user role
@@ -198,18 +214,9 @@ export default function Elections() {
           <h1 className="text-2xl font-bold text-gray-900">Elections</h1>
           <p className="text-sm text-gray-600">Manage all your election campaigns</p>
         </div>
-        <div className="mt-4 sm:mt-0 flex gap-2">
-          {/* Show election admin button for super_admin and franchise_admin */}
-          {(userRole === 'super_admin' || userRole === 'franchise_admin') && (
-            <Link href="/admins">
-              <Button variant="outline">
-                <UserPlus className="h-4 w-4 mr-2" />
-                Add Election Admin
-              </Button>
-            </Link>
-          )}
-          <Link href="/elections/new">
-            <Button>
+        <div className="mt-4 sm:mt-0 flex w-full gap-2 sm:w-auto">
+          <Link href="/elections/create">
+            <Button className="w-full sm:w-auto">
               <PlusIcon className="h-4 w-4 mr-2" />
               Create Election
             </Button>
@@ -248,11 +255,22 @@ export default function Elections() {
       {electionsLoading ? (
         <Skeleton className="h-96 w-full" />
       ) : (
-        <ElectionsTable 
-          elections={displayElections} 
-          onDelete={handleDeleteElection}
-          onStatusChange={handleStatusChange}
-        />
+        <>
+          <ElectionsTable 
+            elections={displayElections} 
+            onDelete={handleDeleteElection}
+            onStatusChange={handleStatusChange}
+          />
+          {electionsPagination && (
+            <PaginationControls
+              page={electionsPagination.page}
+              totalPages={electionsPagination.totalPages ?? 1}
+              total={electionsPagination.total}
+              pageSize={electionsPagination.pageSize}
+              onPageChange={setPage}
+            />
+          )}
+        </>
       )}
 
       <AlertDialog 

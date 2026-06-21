@@ -1,6 +1,7 @@
 import { ReactNode, useState, useEffect } from "react";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
+import { BottomNav } from "./BottomNav";
 import { cn } from "@/lib/utils";
 
 interface MainLayoutProps {
@@ -8,7 +9,9 @@ interface MainLayoutProps {
 }
 
 export function MainLayout({ children }: MainLayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Mobile-first: sidebar starts closed on mobile (the bottom nav is the
+  // primary navigation there). On large screens the sidebar is always visible.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState({
     name: "Loading...",
     role: "",
@@ -51,7 +54,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#F6F8FB]">
       <Header 
         toggleSidebar={toggleSidebar} 
         user={{
@@ -66,13 +69,39 @@ export function MainLayout({ children }: MainLayoutProps) {
         }} 
       />
       <Sidebar isOpen={sidebarOpen} userRole={currentUser.role} />
+
+      {/* Backdrop shown when the sidebar drawer is open on mobile */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 top-16 bg-black/40 z-10 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       <main className={cn(
         "py-6 px-4 sm:px-6 lg:px-8 min-h-screen transition-padding duration-300",
         "pt-20", // Account for fixed header
-        sidebarOpen ? "lg:pl-72" : "lg:pl-8" // Adjust padding when sidebar is open/closed
+        "pb-24 lg:pb-6", // Account for the mobile bottom navigation
+        "lg:pl-72" // Always leave room for the fixed sidebar on large screens
       )}>
         {children}
+
+        <footer className="mt-8 pt-4 border-t border-gray-200 text-center text-xs text-gray-400">
+          Powered by{" "}
+          <a
+            href="https://d4dx.co"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-primary hover:underline"
+          >
+            D4DX.CO
+          </a>
+        </footer>
       </main>
+
+      {/* Mobile-first bottom navigation */}
+      <BottomNav />
     </div>
   );
 }

@@ -63,10 +63,9 @@ export function NomineeCard({
             >
               {nominee.name}
             </label>
-            <p className="text-sm text-gray-500">
-              {nominee.gender.charAt(0).toUpperCase() + nominee.gender.slice(1)} 
-              {nominee.additionalInfo?.department && ` • ${nominee.additionalInfo.department}`}
-            </p>
+            {nominee.additionalInfo?.department && (
+              <p className="text-sm text-gray-500">{nominee.additionalInfo.department}</p>
+            )}
           </div>
           <Button 
             variant="ghost" 
@@ -89,16 +88,17 @@ export function NomineeCard({
           </DialogHeader>
           <div className="flex flex-col items-center py-4">
             <Avatar className="h-24 w-24 mb-4">
-              <AvatarImage src={nominee.photoUrl || undefined} alt={nominee.name} />
+              <AvatarImage src={(nominee as any).photo?.url || nominee.photoUrl || undefined} alt={nominee.name} />
               <AvatarFallback>
                 <UserCircle2 className="h-16 w-16 text-gray-300" />
               </AvatarFallback>
             </Avatar>
             <h3 className="text-lg font-semibold">{nominee.name}</h3>
             <p className="text-sm text-gray-500">
-              {nominee.gender.charAt(0).toUpperCase() + nominee.gender.slice(1)}
-              {nominee.additionalInfo?.department && ` • ${nominee.additionalInfo.department}`}
-              {nominee.additionalInfo?.age && ` • Age: ${nominee.additionalInfo.age}`}
+              {[
+                nominee.additionalInfo?.department,
+                nominee.additionalInfo?.age ? `Age: ${nominee.additionalInfo.age}` : null,
+              ].filter(Boolean).join(' • ')}
             </p>
             {nominee.bio && (
               <div className="mt-4 text-sm text-gray-700 w-full">

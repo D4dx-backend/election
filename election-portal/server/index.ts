@@ -3,8 +3,9 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+// NOTE: Do NOT register body parsers here. This server is a thin reverse proxy;
+// parsing the body (esp. multipart/form-data) corrupts streamed uploads when
+// forwarded by http-proxy-middleware. The backend parses all request bodies.
 
 app.use((req, res, next) => {
   const start = Date.now();

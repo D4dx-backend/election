@@ -44,8 +44,8 @@ export default function VotingInterface() {
 
   useEffect(() => {
     document.title = electionWithDetails
-      ? `Vote: ${electionWithDetails.title} | ElectManager`
-      : "Voting | ElectManager";
+      ? `Vote: ${electionWithDetails.title} | Vote+`
+      : "Voting | Vote+";
   }, [electionWithDetails]);
 
   if (isLoading) {

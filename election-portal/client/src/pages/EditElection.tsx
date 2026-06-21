@@ -24,29 +24,44 @@ export default function EditElection() {
   const handleSubmit = async (formData: any) => {
     try {
       // Clone the form data to avoid modifying the original
-      const submitData = { ...formData };
+      const { logoFile, ...submitData } = formData;
       
       console.log("Updating election:", submitData);
-      
-      // Make API request to update the election
-      await fetch(`/api/elections/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
-        body: JSON.stringify(submitData)
-      }).then(res => {
-        if (!res.ok) {
-          throw new Error('Failed to update election');
-        }
-        return res.json();
-      });
+
+      // Send multipart FormData when a new banner/logo is chosen, else JSON.
+      if (logoFile instanceof File) {
+        const body = new FormData();
+        Object.entries(submitData).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) body.append(key, String(value));
+        });
+        body.append('logo', logoFile);
+        const res = await fetch(`/api/elections/${id}`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+          body,
+        });
+        if (!res.ok) throw new Error('Failed to update election');
+      } else {
+        await fetch(`/api/elections/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+          },
+          body: JSON.stringify(submitData)
+        }).then(res => {
+          if (!res.ok) {
+            throw new Error('Failed to update election');
+          }
+          return res.json();
+        });
+      }
       
       // Show success toast
       toast({
         title: "Election updated",
         description: "The election has been successfully updated.",
+        variant: "success",
       });
       
       // Navigate to elections list
@@ -67,8 +82,8 @@ export default function EditElection() {
 
   useEffect(() => {
     document.title = election 
-      ? `Edit ${election.title} | ElectManager` 
-      : "Edit Election | ElectManager";
+      ? `Edit ${election.title} | Vote+` 
+      : "Edit Election | Vote+";
   }, [election]);
 
   if (isElectionLoading || isGroupsLoading) {

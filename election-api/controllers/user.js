@@ -1,5 +1,6 @@
 const User = require("../model/User");
 const bcrypt = require("bcryptjs");
+const { logUserActivity } = require("../utils/auditLog");
 
 // @desc      ADD USER
 // @route     POST /api/v1/users
@@ -84,7 +85,9 @@ exports.getUserById = async (req, res) => {
 
 exports.getFranchiseAdmins = async (req, res) => {
   try {
-    const users = await User.find({ role: "franchise_admin" }).select("-password");
+    const filter = { role: "franchise_admin" };
+    if (req.query.franchiseId) filter.franchiseId = req.query.franchiseId;
+    const users = await User.find(filter).select("-password");
     res.status(200).json({ success: true, count: users.length, data: users });
   } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
 };
@@ -115,22 +118,150 @@ exports.getAllVoters = async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
 };
 
+// @desc      CREATE SINGLE VOTER
+// @route     POST /api/v1/user/voters
+// @access    protected
+exports.createVoter = async (req, res) => {
+  try {
+    const { username, password, fullName, registrationNumber, electionIds } = req.body;
+    if (!username || typeof username !== "string") {
+      return res.status(400).json({ success: false, message: "username is required." });
+    }
+    const existing = await User.findOne({ username });
+    if (existing) {
+      return res.status(409).json({ success: false, message: "Username already exists." });
+    }
+    const plainPassword = password && String(password).trim() ? String(password) : `vote${Date.now().toString().slice(-4)}`;
+    const hashedPassword = await bcrypt.hash(plainPassword, 10);
+    const franchiseId = req.body.franchiseId || (req.user && req.user.franchiseId) || undefined;
+    const electionAccess = Array.isArray(electionIds) ? electionIds : (electionIds ? [electionIds] : []);
+    const user = await User.create({
+      username,
+      password: hashedPassword,
+      fullName: fullName || username,
+      role: "voter",
+      isVoter: true,
+      status: "active",
+      registrationNumber: registrationNumber || username,
+      franchiseId,
+      electionAccess,
+    });
+    await logUserActivity(req.user._id, req.ip, "Created", user.username, "Voter");
+    res.status(201).json({
+      success: true,
+      message: "Voter created.",
+      data: { id: user._id, username: user.username, password: plainPassword },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
+exports.generateVoters = async (req, res) => {
+  try {
+    const {
+      prefix,
+      startingNumber,
+      count,
+      electionIds,
+      electionGroupId,
+      voterGroupId,
+      assignmentType,
+    } = req.body;
+
+    if (!prefix || typeof prefix !== "string") {
+      return res.status(400).json({ success: false, message: "prefix is required." });
+    }
+    const start = parseInt(startingNumber, 10);
+    const num = parseInt(count, 10);
+    if (Number.isNaN(start) || start < 0) {
+      return res.status(400).json({ success: false, message: "startingNumber must be a non-negative number." });
+    }
+    if (Number.isNaN(num) || num < 1 || num > 1000) {
+      return res.status(400).json({ success: false, message: "count must be between 1 and 1000." });
+    }
+
+    const electionAccess =
+      assignmentType === "election" && Array.isArray(electionIds) ? electionIds : [];
+    const electionGroups =
+      assignmentType === "electionGroup" && electionGroupId ? [electionGroupId] : [];
+
+    // Build the list of usernames we intend to create
+    const usernames = [];
+    for (let i = 0; i < num; i++) usernames.push(`${prefix}${start + i}`);
+
+    // Skip usernames that already exist to avoid unique-index collisions
+    const existing = await User.find({ username: { $in: usernames } }).select("username");
+    const existingSet = new Set(existing.map((u) => u.username));
+
+    const franchiseId = req.body.franchiseId || (req.user && req.user.franchiseId) || undefined;
+
+    const docs = [];
+    for (let i = 0; i < num; i++) {
+      const seq = start + i;
+      const username = `${prefix}${seq}`;
+      if (existingSet.has(username)) continue;
+      const plainPassword = `${prefix.toLowerCase()}${seq}`;
+      const hashedPassword = await bcrypt.hash(plainPassword, 10);
+      docs.push({
+        username,
+        password: hashedPassword,
+        fullName: username,
+        role: "voter",
+        isVoter: true,
+        status: "active",
+        registrationNumber: username,
+        franchiseId,
+        electionAccess,
+        voterMetadata: {
+          prefix,
+          sequenceNumber: seq,
+          electionGroups,
+        },
+        ...(voterGroupId ? { voterGroupId } : {}),
+      });
+    }
+
+    if (docs.length === 0) {
+      return res.status(409).json({
+        success: false,
+        message: "All requested voter usernames already exist.",
+      });
+    }
+
+    const created = await User.insertMany(docs, { ordered: false });
+    res.status(201).json({
+      success: true,
+      message: `Generated ${created.length} voter accounts.`,
+      count: created.length,
+      skipped: num - created.length,
+      data: created.map((u) => ({ id: u._id, username: u.username })),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
 exports.createFranchiseAdmin = async (req, res) => {
   try {
-    const existing = await User.findOne({ username: req.body.username });
+    const { username, password, fullName, franchiseId } = req.body;
+    const existing = await User.findOne({ username });
     if (existing) return res.status(409).json({ success: false, message: "Username already exists." });
-    const hashedPassword = await bcrypt.hash(req.body.password, 10);
-    const user = await User.create({ ...req.body, password: hashedPassword, role: "franchise_admin" });
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await User.create({ username, password: hashedPassword, fullName, franchiseId, role: "franchise_admin" });
     res.status(201).json({ success: true, message: "Franchise admin created.", data: { id: user._id, username: user.username, role: user.role } });
   } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
 };
 
 exports.createElectionAdmin = async (req, res) => {
   try {
-    const existing = await User.findOne({ username: req.body.username });
+    const { username, password, fullName, franchiseId, electionAccess } = req.body;
+    const existing = await User.findOne({ username });
     if (existing) return res.status(409).json({ success: false, message: "Username already exists." });
-    const hashedPassword = await bcrypt.hash(req.body.password, 10);
-    const user = await User.create({ ...req.body, password: hashedPassword, role: "election_admin" });
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await User.create({ username, password: hashedPassword, fullName, franchiseId, electionAccess, role: "election_admin" });
     res.status(201).json({ success: true, message: "Election admin created.", data: { id: user._id, username: user.username, role: user.role } });
   } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
 };
