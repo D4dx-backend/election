@@ -67,8 +67,10 @@ export function ElectionForm({
         : new Date().toISOString().split('T')[0],
       numberToBeElected: initialValues?.numberToBeElected || 1,
       nomineeDisplayOrder: initialValues?.nomineeDisplayOrder || "ALPHA",
+      voterResultDisplay: initialValues?.voterResultDisplay || "full",
       maxVoters: initialValues?.maxVoters || 0,
       maxNominees: initialValues?.maxNominees || 0,
+      genderBasedSelection: initialValues?.genderBasedSelection || false,
       maleMinimum: initialValues?.maleMinimum || 0,
       femaleMinimum: initialValues?.femaleMinimum || 0,
       selfRegOpen: initialValues?.selfRegOpen || false,
@@ -87,7 +89,7 @@ export function ElectionForm({
   return (
     <Card>
       <CardContent className="p-6">
-        <form onSubmit={handleSubmit(onSubmit)}>
+        <form onSubmit={handleSubmit((values) => onSubmit({ ...values, logoFile: selectedFile }))}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <Label htmlFor="organization">Organization Name</Label>
@@ -161,6 +163,24 @@ export function ElectionForm({
                 <p className="text-sm text-red-500 mt-1">{formState.errors.nomineeDisplayOrder.message}</p>
               )}
             </div>
+            <div>
+              <Label htmlFor="voterResultDisplay">Voter Result Display</Label>
+              <Select
+                onValueChange={(value) => setValue("voterResultDisplay", value)}
+                defaultValue={watch("voterResultDisplay") || "full"}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select what voters see" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="result_only">Only Result (winners)</SelectItem>
+                  <SelectItem value="percentage">Result with Percentage</SelectItem>
+                  <SelectItem value="score">Result with Score (votes)</SelectItem>
+                  <SelectItem value="full">Result with Score &amp; Percentage</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">Controls how much detail published results show to voters</p>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
@@ -192,37 +212,57 @@ export function ElectionForm({
                 <p className="text-sm text-red-500 mt-1">{formState.errors.maxNominees.message}</p>
               )}
             </div>
-            <div>
-              <Label htmlFor="maleMinimum">Male Minimum</Label>
-              <Input
-                id="maleMinimum"
-                type="number"
-                min="0"
-                placeholder="e.g. 2"
-                {...register("maleMinimum", { valueAsNumber: true })}
-                className="mt-1"
-              />
-              {formState.errors.maleMinimum && (
-                <p className="text-sm text-red-500 mt-1">{formState.errors.maleMinimum.message}</p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="femaleMinimum">Female Minimum</Label>
-              <Input
-                id="femaleMinimum"
-                type="number"
-                min="0"
-                placeholder="e.g. 2"
-                {...register("femaleMinimum", { valueAsNumber: true })}
-                className="mt-1"
-              />
-              {formState.errors.femaleMinimum && (
-                <p className="text-sm text-red-500 mt-1">{formState.errors.femaleMinimum.message}</p>
-              )}
-            </div>
+            {watch("genderBasedSelection") === true && (
+              <>
+                <div>
+                  <Label htmlFor="maleMinimum">Male Minimum</Label>
+                  <Input
+                    id="maleMinimum"
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 2"
+                    {...register("maleMinimum", { valueAsNumber: true })}
+                    className="mt-1"
+                  />
+                  {formState.errors.maleMinimum && (
+                    <p className="text-sm text-red-500 mt-1">{formState.errors.maleMinimum.message}</p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="femaleMinimum">Female Minimum</Label>
+                  <Input
+                    id="femaleMinimum"
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 2"
+                    {...register("femaleMinimum", { valueAsNumber: true })}
+                    className="mt-1"
+                  />
+                  {formState.errors.femaleMinimum && (
+                    <p className="text-sm text-red-500 mt-1">{formState.errors.femaleMinimum.message}</p>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="genderBasedSelection"
+                checked={watch("genderBasedSelection") === true}
+                onCheckedChange={(checked) => setValue("genderBasedSelection", checked as boolean)}
+              />
+              <div>
+                <Label
+                  htmlFor="genderBasedSelection"
+                  className="font-medium text-gray-700 cursor-pointer"
+                >
+                  Gender-based selection
+                </Label>
+                <p className="text-xs text-gray-500">Collect and enforce male/female requirements for this election</p>
+              </div>
+            </div>
             <div className="flex items-center space-x-2">
               <Checkbox 
                 id="selfRegOpen" 

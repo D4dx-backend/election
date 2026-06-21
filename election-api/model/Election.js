@@ -13,10 +13,24 @@ const ElectionSchema = new mongoose.Schema(
     nomineeDisplayOrder: String,
     maxVoters: Number,
     maxNominees: Number,
+    genderBasedSelection: {
+      type: Boolean,
+      default: false,
+    },
     maleMinimum: Number,
     femaleMinimum: Number,
     selfRegOpen: Boolean,
     votingOpen: Boolean,
+    resultsPublished: {
+      type: Boolean,
+      default: false,
+    },
+    resultsPublishedAt: Date,
+    voterResultDisplay: {
+      type: String,
+      enum: ["result_only", "percentage", "score", "full"],
+      default: "full",
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

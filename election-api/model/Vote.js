@@ -28,4 +28,9 @@ const VoteSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Guarantee one ballot per voter per election even under concurrent requests
+// (double-click / retry / parallel calls). The check-then-create logic in the
+// controller cannot prevent a race on its own; this unique index does.
+VoteSchema.index({ electionId: 1, voterId: 1 }, { unique: true });
+
 module.exports = mongoose.model("Vote", VoteSchema);

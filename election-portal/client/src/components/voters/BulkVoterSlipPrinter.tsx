@@ -15,16 +15,34 @@ import { Printer, FileDown } from "lucide-react";
 import jsPDF from "jspdf";
 import 'jspdf-autotable';
 
+// Load the Vote+ logo once and cache it for PDF embedding/watermarking.
+let cachedLogo: HTMLImageElement | null = null;
+const loadLogo = (): Promise<HTMLImageElement | null> =>
+  new Promise((resolve) => {
+    if (cachedLogo) return resolve(cachedLogo);
+    const img = new Image();
+    img.onload = () => {
+      cachedLogo = img;
+      resolve(img);
+    };
+    img.onerror = () => resolve(null);
+    img.src = '/logo.png';
+  });
+
 interface BulkVoterSlipPrinterProps {
   voters: User[];
   elections: Election[];
   selectedElectionId?: string;
+  label?: string;
+  className?: string;
 }
 
 export function BulkVoterSlipPrinter({ 
   voters, 
   elections,
-  selectedElectionId
+  selectedElectionId,
+  label = "Bulk Print Slips",
+  className,
 }: BulkVoterSlipPrinterProps) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
@@ -67,7 +85,7 @@ export function BulkVoterSlipPrinter({
       .map(election => `${election.title} - ${election.organization}`);
   };
 
-  const printBulkSlips = () => {
+  const printBulkSlips = async () => {
     // If we've already filtered on the backend, use all voters
     // They'll already be filtered by the selected election
     const filteredVoters = voters;
@@ -82,6 +100,12 @@ export function BulkVoterSlipPrinter({
     }
 
     try {
+      // Load the Vote+ logo for the header and per-slip watermark.
+      const logo = await loadLogo();
+      const logoRatio = logo && logo.naturalHeight
+        ? logo.naturalWidth / logo.naturalHeight
+        : 2.62; // fallback to the wordmark aspect ratio
+
       // Create a new PDF document
       const doc = new jsPDF({
         orientation: 'portrait',
@@ -98,8 +122,30 @@ export function BulkVoterSlipPrinter({
       const rows = 5;
       const slipWidth = pageWidth / columns - 10; // With margins
       const slipHeight = pageHeight / rows - 10; // With margins
+
+      // Draws a faint, centered Vote+ watermark inside the given slip area.
+      const drawWatermark = (sx: number, sy: number) => {
+        if (!logo) return;
+        const wmWidth = slipWidth * 0.6;
+        const wmHeight = wmWidth / logoRatio;
+        const wmX = sx + (slipWidth - wmWidth) / 2;
+        const wmY = sy + (slipHeight - wmHeight) / 2;
+        const anyDoc = doc as any;
+        if (anyDoc.GState && anyDoc.setGState) {
+          anyDoc.setGState(new anyDoc.GState({ opacity: 0.07 }));
+          doc.addImage(logo, 'PNG', wmX, wmY, wmWidth, wmHeight);
+          anyDoc.setGState(new anyDoc.GState({ opacity: 1 }));
+        } else {
+          doc.addImage(logo, 'PNG', wmX, wmY, wmWidth, wmHeight);
+        }
+      };
       
       // Add title to first page
+      if (logo) {
+        const headerLogoW = 26;
+        const headerLogoH = headerLogoW / logoRatio;
+        doc.addImage(logo, 'PNG', 10, 4, headerLogoW, headerLogoH);
+      }
       doc.setFontSize(16);
       doc.text("Voter Credentials", pageWidth / 2, 10, { align: 'center' });
       doc.setFontSize(10);
@@ -134,13 +180,22 @@ export function BulkVoterSlipPrinter({
         doc.setDrawColor(200, 200, 200);
         doc.setLineWidth(0.5);
         doc.rect(x, y, slipWidth, slipHeight);
+
+        // Faint Vote+ watermark behind the slip content
+        drawWatermark(x, y);
         
         // Voter Credentials Header
         doc.setFillColor(240, 240, 240);
         doc.rect(x, y, slipWidth, 10, 'F');
-        doc.setFontSize(12);
+        // Vote+ logo in the header bar
+        if (logo) {
+          const slipLogoW = 16;
+          const slipLogoH = slipLogoW / logoRatio;
+          doc.addImage(logo, 'PNG', x + 4, y + (10 - slipLogoH) / 2, slipLogoW, slipLogoH);
+        }
+        doc.setFontSize(11);
         doc.setTextColor(0, 0, 0);
-        doc.text("Voter Credentials", x + 5, y + 7);
+        doc.text("Voter Credentials", x + 23, y + 7);
         
         // Serial number at top right
         doc.setFontSize(8);
@@ -181,6 +236,7 @@ export function BulkVoterSlipPrinter({
       toast({
         title: "Voter slips generated",
         description: `Successfully generated ${votersProcessed} voter slips`,
+        variant: "success",
       });
 
       setOpen(false);
@@ -206,9 +262,9 @@ export function BulkVoterSlipPrinter({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" className={className}>
           <Printer className="mr-2 h-4 w-4" />
-          Bulk Print Slips
+          {label}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[500px]">

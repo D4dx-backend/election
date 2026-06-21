@@ -30,11 +30,25 @@ exports.addAuditLog = async (req, res) => {
 // @access    Protected
 exports.getAuditLogs = async (req, res) => {
   try {
-    console.log("Controller: Attempting to get all audit logs");
-    // Add any query parameters for filtering or pagination if needed
-    const auditLogs = await AuditLog.find().populate('userId', 'username fullName email'); // Populate user details
-    console.log("Controller: Retrieved all audit logs, count:", auditLogs.length);
-    res.status(200).json({ success: true, count: auditLogs.length, data: auditLogs });
+    // Server-side pagination (default 10 per page, newest first)
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.max(parseInt(req.query.limit, 10) || 10, 1);
+    const skip = (page - 1) * limit;
+
+    const total = await AuditLog.countDocuments();
+    const auditLogs = await AuditLog.find()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('userId', 'username fullName email'); // Populate user details
+
+    const totalPages = Math.max(Math.ceil(total / limit), 1);
+    res.status(200).json({
+      success: true,
+      count: auditLogs.length,
+      pagination: { total, page, limit, totalPages },
+      data: auditLogs,
+    });
   } catch (err) {
     console.error("Controller Error in getAuditLogs:", err.message);
     if (typeof errorLog === "function") {

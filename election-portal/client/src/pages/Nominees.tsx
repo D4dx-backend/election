@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
@@ -45,14 +45,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { NomineeForm } from "@/components/nominees/NomineeForm";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 
-export default function Nominees() {
-  const [selectedElectionId, setSelectedElectionId] = useState<string>("all");
+export default function Nominees({ embedded = false, electionId }: { embedded?: boolean; electionId?: string } = {}) {
+  const [selectedElectionId, setSelectedElectionId] = useState<string>(electionId || "all");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [deleteNomineeId, setDeleteNomineeId] = useState<string | null>(null);
   const [isAddNomineeOpen, setIsAddNomineeOpen] = useState(false);
   const [isEditNomineeOpen, setIsEditNomineeOpen] = useState(false);
   const [currentNominee, setCurrentNominee] = useState<any>(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const { toast } = useToast();
   
   // Fetch nominees data
@@ -131,7 +134,8 @@ export default function Nominees() {
     onSuccess: () => {
       toast({
         title: "Nominee Deleted",
-        description: "Nominee has been deleted successfully"
+        description: "Nominee has been deleted successfully",
+        variant: "success"
       });
       setDeleteNomineeId(null);
       refetchNominees();
@@ -218,7 +222,16 @@ export default function Nominees() {
       });
   
   console.log('Display nominees after filtering:', displayNominees);
-  
+
+  // Client-side pagination (10 per page) over the filtered list
+  const totalNominees = displayNominees.length;
+  const totalNomineePages = Math.max(Math.ceil(totalNominees / pageSize), 1);
+  const paginatedNominees = displayNominees.slice((page - 1) * pageSize, page * pageSize);
+
+  // Reset to first page when filters/search change
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, selectedElectionId, totalNominees]);
   // Export nominee data to PDF
   const exportToPDF = () => {
     try {
@@ -244,7 +257,7 @@ export default function Nominees() {
       doc.text(`Generated on ${new Date().toLocaleDateString()}`, 14, 30);
       
       // Prepare data for table
-      const tableColumn = ["Name", "Gender", "Election"];
+      const tableColumn = ["Name", "Election"];
       const tableRows = displayNominees.map((nominee: any, index: number) => {
         const election = elections.find((e: any) => {
           const electionId = e._id?.toString() || e.id?.toString();
@@ -256,7 +269,6 @@ export default function Nominees() {
         
         return [
           nominee.name || 'Unknown',
-          nominee.gender === 'male' ? 'Male' : 'Female',
           election ? election.title : 'Unknown Election'
         ];
       });
@@ -276,7 +288,8 @@ export default function Nominees() {
         
         toast({
           title: "PDF Exported",
-          description: "Nominees list has been exported to PDF successfully"
+          description: "Nominees list has been exported to PDF successfully",
+          variant: "success"
         });
       } catch (tableError) {
         console.error('Error creating PDF table:', tableError);
@@ -311,7 +324,6 @@ export default function Nominees() {
         
         return {
           'Name': nominee.name || 'Unknown',
-          'Gender': nominee.gender === 'male' ? 'Male' : 'Female',
           'Election': election ? election.title : 'Unknown Election'
         };
       });
@@ -342,7 +354,8 @@ export default function Nominees() {
       
       toast({
         title: "Excel Exported",
-        description: "Nominees list has been exported to Excel successfully"
+        description: "Nominees list has been exported to Excel successfully",
+        variant: "success"
       });
     } catch (error) {
       console.error('Error exporting to Excel:', error);
@@ -360,28 +373,78 @@ export default function Nominees() {
   };
 
   useEffect(() => {
-    document.title = "Nominees | ElectManager";
-  }, []);
+    if (!embedded) document.title = "Nominees | Vote+";
+  }, [embedded]);
+
+  // When embedded inside an election workspace, the election is fixed and the
+  // nominee form should pre-select it.
+  const formElections = embedded
+    ? elections.filter((e: any) => (e._id?.toString() || e.id?.toString()) === selectedElectionId)
+    : elections;
+
+  // Show the gender column only when a single, gender-based election is selected.
+  const selectedElectionGenderBased =
+    selectedElectionId !== 'all' &&
+    !!elections.find(
+      (e: any) =>
+        (e._id?.toString() || e.id?.toString()) === selectedElectionId
+    )?.genderBasedSelection;
+
+  const Wrapper = embedded ? Fragment : MainLayout;
 
   return (
-    <MainLayout>
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
+    <Wrapper>
+      {!embedded && (
+        <div className="mb-4">
           <h1 className="text-2xl font-bold text-gray-900">Nominees</h1>
           <p className="text-sm text-gray-600">Manage candidates for your elections</p>
         </div>
-        <div className="mt-4 sm:mt-0 space-x-2 flex flex-wrap gap-2">
-          <Button onClick={handleAddNominee}>
+      )}
+
+      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+          {!embedded && (
+            <Select value={selectedElectionId} onValueChange={handleElectionChange}>
+              <SelectTrigger className="h-10 w-full sm:w-64">
+                <SelectValue placeholder="Select Election" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Elections</SelectItem>
+                {electionsLoading ? (
+                  <SelectItem value="loading" disabled>Loading elections...</SelectItem>
+                ) : (
+                  elections.map((election: any) => (
+                    <SelectItem
+                      key={election._id || election.id}
+                      value={election._id?.toString() || election.id?.toString()}
+                    >
+                      {election.title}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          )}
+          <Input
+            placeholder="Search nominees..."
+            value={searchTerm}
+            onChange={handleSearchChange}
+            className="h-10 w-full sm:max-w-xs"
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+          <Button size="sm" className="h-10" onClick={handleAddNominee}>
             <PlusIcon className="h-4 w-4 mr-2" />
-            Add Nominees
+            Nominee
           </Button>
-          <Button variant="outline" onClick={exportToPDF} disabled={!displayNominees?.length}>
+          <Button variant="outline" size="sm" className="h-10" onClick={exportToPDF} disabled={!displayNominees?.length}>
             <FileText className="h-4 w-4 mr-2" />
-            Export PDF
+            PDF
           </Button>
-          <Button variant="outline" onClick={exportToExcel} disabled={!displayNominees?.length}>
+          <Button variant="outline" size="sm" className="h-10" onClick={exportToExcel} disabled={!displayNominees?.length}>
             <FileSpreadsheet className="h-4 w-4 mr-2" />
-            Export Excel
+            Excel
           </Button>
         </div>
       </div>
@@ -395,42 +458,6 @@ export default function Nominees() {
           </AlertDescription>
         </Alert>
       )}
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Filter Nominees</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-6 sm:grid-cols-2">
-          <div>
-            <Select value={selectedElectionId} onValueChange={handleElectionChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select Election" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Elections</SelectItem>
-                {electionsLoading ? (
-                  <SelectItem value="loading" disabled>Loading elections...</SelectItem>
-                ) : (
-                  elections.map((election: any) => (
-                    <SelectItem 
-                      key={election._id || election.id} 
-                      value={election._id?.toString() || election.id?.toString()}>
-                      {election.title}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Input
-              placeholder="Search nominees..."
-              value={searchTerm}
-              onChange={handleSearchChange}
-            />
-          </div>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
@@ -458,18 +485,60 @@ export default function Nominees() {
               <p className="text-gray-500">No nominees found. Add some nominees to get started.</p>
             </div>
           ) : (
-            <div className="overflow-auto">
-              <Table>
+            <div>
+              <div className="divide-y divide-gray-100 md:hidden">
+                {paginatedNominees.map((nominee: any) => {
+                  const election = elections.find((e: any) => {
+                    const electionId = e._id?.toString() || e.id?.toString();
+                    const nomineeElectionId = nominee.electionId?._id?.toString() || 
+                                          nominee.electionId?.toString() || 
+                                          nominee.electionId;
+                    return electionId === nomineeElectionId;
+                  });
+
+                  return (
+                    <div key={nominee._id || nominee.id} className="py-4 space-y-3">
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-gray-900 truncate">{nominee.name}</h3>
+                        <p className="text-sm text-gray-500 truncate">{election ? election.title : 'Unknown Election'}</p>
+                      </div>
+                      {selectedElectionGenderBased && (
+                        <div className="rounded-md bg-gray-50 p-3 text-sm">
+                          <p className="text-xs text-gray-500">Gender</p>
+                          <p className="font-medium text-gray-900 capitalize">{nominee.gender || '—'}</p>
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => handleEditNominee(nominee)}>
+                          <Pencil className="h-4 w-4 mr-1" />
+                          Edit
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-red-600 hover:text-red-900 hover:bg-red-50"
+                          onClick={() => handleDeleteClick(nominee._id || nominee.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="hidden overflow-auto md:block">
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>Gender</TableHead>
+                    {selectedElectionGenderBased && <TableHead>Gender</TableHead>}
                     <TableHead>Election</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {displayNominees.map((nominee: any) => {
+                  {paginatedNominees.map((nominee: any) => {
                     // Find the associated election
                     const election = elections.find((e: any) => {
                       const electionId = e._id?.toString() || e.id?.toString();
@@ -482,27 +551,38 @@ export default function Nominees() {
                     return (
                       <TableRow key={nominee._id || nominee.id}>
                         <TableCell className="font-medium">{nominee.name}</TableCell>
-                        <TableCell>{nominee.gender === 'male' ? 'Male' : 'Female'}</TableCell>
+                        {selectedElectionGenderBased && (
+                          <TableCell className="capitalize">{nominee.gender || '—'}</TableCell>
+                        )}
                         <TableCell>{election ? election.title : 'Unknown Election'}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right space-x-1">
                           <Button variant="ghost" size="sm" onClick={() => handleEditNominee(nominee)}>
-                            <Pencil className="h-4 w-4" />
-                            <span className="sr-only">Edit</span>
+                            <Pencil className="h-4 w-4 mr-1" />
+                            Edit
                           </Button>
                           <Button 
                             variant="ghost" 
                             size="sm" 
+                            className="text-red-600 hover:text-red-900 hover:bg-red-50"
                             onClick={() => handleDeleteClick(nominee._id || nominee.id)}
                           >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                            <span className="sr-only">Delete</span>
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            Delete
                           </Button>
                         </TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
-              </Table>
+                </Table>
+              </div>
+              <PaginationControls
+                page={page}
+                totalPages={totalNomineePages}
+                total={totalNominees}
+                pageSize={pageSize}
+                onPageChange={setPage}
+              />
             </div>
           )}
         </CardContent>
@@ -523,7 +603,7 @@ export default function Nominees() {
               refetchNominees();
               queryClient.invalidateQueries({ queryKey: ['/api/nominees'] });
             }}
-            elections={elections}
+            elections={formElections}
           />
         </DialogContent>
       </Dialog>
@@ -567,6 +647,6 @@ export default function Nominees() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </MainLayout>
+    </Wrapper>
   );
 }

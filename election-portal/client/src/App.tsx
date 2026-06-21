@@ -7,12 +7,17 @@ import Dashboard from "@/pages/Dashboard";
 import Elections from "@/pages/Elections";
 import CreateElection from "@/pages/CreateElection";
 import EditElection from "@/pages/EditElection";
+import ElectionWorkspace from "@/pages/ElectionWorkspace";
 import Nominees from "@/pages/Nominees";
 import Voters from "@/pages/Voters";
 import Analytics from "@/pages/Analytics";
 import ElectionGroups from "@/pages/ElectionGroups";
 import Franchises from "@/pages/Franchises";
 import Admins from "@/pages/Admins";
+import Reports from "@/pages/Reports";
+import Settings from "@/pages/Settings";
+import AuditLogs from "@/pages/AuditLogs";
+import VoterGroups from "@/pages/VoterGroups";
 import Login from "@/pages/Login";
 import Onboarding from "@/pages/Onboarding";
 import VotingPortal from "@/pages/VotingPortal";
@@ -150,6 +155,7 @@ function Router() {
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/elections/create" component={CreateElection} />
         <Route path="/elections/:id/edit" component={EditElection} />
+        <Route path="/elections/:id" component={ElectionWorkspace} />
         <Route path="/elections" component={Elections} />
         <Route path="/nominees" component={Nominees} />
         <Route path="/voters" component={Voters} />
@@ -157,6 +163,10 @@ function Router() {
         <Route path="/election-groups" component={ElectionGroups} />
         <Route path="/franchises" component={Franchises} />
         <Route path="/admins" component={Admins} />
+        <Route path="/voter-groups" component={VoterGroups} />
+        <Route path="/reports" component={Reports} />
+        <Route path="/settings" component={Settings} />
+        <Route path="/audit-logs" component={AuditLogs} />
 
         <Route component={NotFound} />
       </Switch>

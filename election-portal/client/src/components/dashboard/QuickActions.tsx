@@ -16,21 +16,21 @@ export function QuickActions({ recentActivity }: QuickActionsProps) {
       </CardHeader>
       <CardContent className="p-6">
         <div className="space-y-4">
-          <Link href="/elections/new">
+          <Link href="/elections/create">
             <Button className="w-full" size="lg">
               <PlusCircle className="mr-2 h-4 w-4" />
               Create New Election
             </Button>
           </Link>
           
-          <Link href="/voters/bulk">
+          <Link href="/voters">
             <Button variant="secondary" className="w-full" size="lg">
               <Users className="mr-2 h-4 w-4" />
               Generate Voter Accounts
             </Button>
           </Link>
           
-          <Link href="/nominees/manage">
+          <Link href="/nominees">
             <Button variant="outline" className="w-full" size="lg">
               <UserPlus className="mr-2 h-4 w-4" />
               Manage Nominees

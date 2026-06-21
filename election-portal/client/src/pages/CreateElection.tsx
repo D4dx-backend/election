@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import MainLayout from "@/components/layouts/MainLayout";
+import { MainLayout } from "@/components/layout/MainLayout";
 import { ElectionForm } from "@/components/elections/ElectionForm";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export default function CreateElection() {
   const [, navigate] = useLocation();
@@ -40,7 +40,7 @@ export default function CreateElection() {
   const handleSubmit = async (formData: any) => {
     try {
       // Clone the form data to avoid modifying the original
-      const submitData = { ...formData };
+      const { logoFile, ...submitData } = formData;
       
       // If user is a franchise_admin, automatically set the franchiseId
       if (userRole === 'franchise_admin' && franchiseId) {
@@ -48,16 +48,31 @@ export default function CreateElection() {
       }
 
       console.log("Submitting election data:", submitData);
-      
-      // Make API request to create the election
-      const response = await fetch('/api/elections', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
-        body: JSON.stringify(submitData)
-      });
+
+      // When a banner/logo file is chosen, send multipart FormData so the
+      // backend (multer) can store it; otherwise send plain JSON.
+      let response: Response;
+      if (logoFile instanceof File) {
+        const body = new FormData();
+        Object.entries(submitData).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) body.append(key, String(value));
+        });
+        body.append('logo', logoFile);
+        response = await fetch('/api/elections', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+          body,
+        });
+      } else {
+        response = await fetch('/api/elections', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+          },
+          body: JSON.stringify(submitData)
+        });
+      }
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -70,9 +85,11 @@ export default function CreateElection() {
       toast({
         title: "Election created",
         description: "The election has been successfully created.",
+        variant: "success",
       });
       
       // Navigate to elections list
+      queryClient.invalidateQueries({ queryKey: ['/api/elections'] });
       navigate("/elections");
     } catch (error) {
       console.error('Error creating election:', error);
@@ -89,7 +106,7 @@ export default function CreateElection() {
   };
 
   useEffect(() => {
-    document.title = "Create Election | ElectManager";
+    document.title = "Create Election | Vote+";
   }, []);
 
   const isLoading = isLoadingUser || isLoadingGroups || (userRole === 'super_admin' && isLoadingFranchises);

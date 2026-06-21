@@ -10,25 +10,105 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
-import { Link } from "wouter";
-import { ElectionWithDetails } from "@/lib/types";
-import { DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuItem, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Activity, Trash2 } from "lucide-react";
+import { Link, useLocation } from "wouter";
+import { ElectionStatus, ElectionWithDetails } from "@/lib/types";
+import { DropdownMenuItem, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/components/ui/dropdown-menu";
+import { MoreHorizontal, Activity, Trash2, Pencil } from "lucide-react";
 
 interface ElectionsTableProps {
   elections: ElectionWithDetails[];
   onDelete?: (id: string) => void;
-  onStatusChange?: (id: string, status: string) => void;
+  onStatusChange?: (id: string, status: ElectionStatus) => void;
 }
 
 export function ElectionsTable({ elections, onDelete, onStatusChange }: ElectionsTableProps) {
+  const [, navigate] = useLocation();
+
   return (
     <Card>
       <CardHeader className="px-6 py-4 border-b border-gray-200">
         <CardTitle className="text-lg font-medium text-gray-900">Elections</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
+        <div className="divide-y divide-gray-100 md:hidden">
+          {elections.map((election) => {
+            const id = election._id?.toString() || election.id?.toString() || "";
+            return (
+              <div
+                key={id}
+                className="p-4 space-y-4 cursor-pointer transition-colors duration-150 hover:bg-gray-50 active:bg-gray-100"
+                onClick={() => navigate(`/elections/${id}`)}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-400 mb-1">EL-{id.substring(0, 4)}</p>
+                    <h3 className="font-semibold text-gray-900 leading-tight">{election.title}</h3>
+                    <p className="text-sm text-gray-500 mt-1">{election.organization}</p>
+                  </div>
+                  <StatusBadge status={election.status} />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 rounded-md bg-gray-50 p-3 text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500">Date</p>
+                    <p className="font-medium text-gray-900">{format(new Date(election.electionDate), 'yyyy-MM-dd')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Seats</p>
+                    <p className="font-medium text-gray-900">{election.numberToBeElected}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Voters</p>
+                    <p className="font-medium text-gray-900">{election.maxVoters}</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                  <Link href={`/elections/${id}/edit`}>
+                    <Button variant="ghost" size="sm" className="h-9">
+                      <Pencil className="h-4 w-4 mr-1" />
+                      {election.status === 'completed' ? 'Results' : 'Edit'}
+                    </Button>
+                  </Link>
+                  {election.status !== 'completed' && election.status !== 'archived' && onDelete && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 text-red-600 hover:text-red-900 hover:bg-red-50"
+                      onClick={() => onDelete(id)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                  )}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-9 ml-auto">
+                        <MoreHorizontal className="h-4 w-4 mr-1" /> More
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => onStatusChange?.(id, 'draft')}>
+                        <Activity className="mr-2 h-4 w-4" /> Set as Draft
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onStatusChange?.(id, 'active')}>
+                        <Activity className="mr-2 h-4 w-4" /> Set as Active
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onStatusChange?.(id, 'completed')}>
+                        <Activity className="mr-2 h-4 w-4" /> Set as Completed
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onStatusChange?.(id, 'archived')}>
+                        <Activity className="mr-2 h-4 w-4" /> Set as Archived
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -44,7 +124,11 @@ export function ElectionsTable({ elections, onDelete, onStatusChange }: Election
             </TableHeader>
             <TableBody>
               {elections.map((election) => (
-                <TableRow key={election._id || election.id} className="hover:bg-gray-50">
+                <TableRow
+                  key={election._id || election.id}
+                  className="hover:bg-gray-50 cursor-pointer transition-colors duration-150"
+                  onClick={() => navigate(`/elections/${election._id?.toString() || election.id?.toString() || ''}`)}
+                >
                   <TableCell className="text-sm text-gray-500">
                     EL-{(election._id?.toString() || election.id?.toString() || '').substring(0, 4)}
                   </TableCell>
@@ -66,43 +150,31 @@ export function ElectionsTable({ elections, onDelete, onStatusChange }: Election
                   <TableCell>
                     <StatusBadge status={election.status} />
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Link href={`/elections/${election._id?.toString() || election.id?.toString()}`}>
-                      <Button variant="link" className="text-primary hover:text-primary-dark mr-2">
-                        View
-                      </Button>
-                    </Link>
+                  <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
                     <Link href={`/elections/${election._id?.toString() || election.id?.toString()}/edit`}>
-                      <Button variant="link" className="text-gray-600 hover:text-gray-900 mr-2">
+                      <Button variant="ghost" size="sm" className="mr-1">
+                        <Pencil className="h-4 w-4 mr-1" />
                         {election.status === 'completed' ? 'Results' : 'Edit'}
                       </Button>
                     </Link>
                     {election.status !== 'completed' && election.status !== 'archived' && onDelete && (
                       <Button 
-                        variant="link" 
-                        className="text-red-600 hover:text-red-900"
+                        variant="ghost"
+                        size="sm"
+                        className="mr-1 text-red-600 hover:text-red-900 hover:bg-red-50"
                         onClick={() => onDelete(election._id?.toString() || election.id?.toString() || '')}
                       >
+                        <Trash2 className="h-4 w-4 mr-1" />
                         Delete
                       </Button>
                     )}
                     {(election.status === 'completed' || election.status === 'archived') && (
                       <span className="text-gray-400 cursor-not-allowed">Delete</span>
                     )}
-                    <Button 
-                      variant="outline" 
-                      className="ml-2 h-8 px-2 text-xs"
-                      onClick={() => {
-                        const electionId = election._id?.toString() || election.id?.toString() || '';
-                        onStatusChange?.(electionId, 'active');
-                      }}
-                    >
-                      <Activity className="mr-1 h-4 w-4" /> Set Active
-                    </Button>
                     
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" className="ml-2 h-8 px-2 text-xs">
+                        <Button variant="ghost" size="sm">
                           <MoreHorizontal className="mr-1 h-4 w-4" /> More
                         </Button>
                       </DropdownMenuTrigger>

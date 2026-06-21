@@ -53,13 +53,39 @@ export function ResultsTable({
           </svg>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="divide-y divide-gray-100 md:hidden">
+          {nominees.map((nominee, index) => {
+            const isElected = index < numberToBeElected;
+            const nomineeId = (nominee as NomineeWithVotes & { _id?: string })._id || nominee.id;
+            return (
+              <div key={nomineeId} className={`p-4 space-y-3 ${isElected ? "bg-green-50/60" : ""}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-500">Rank #{index + 1}</p>
+                    <h3 className="font-semibold text-gray-900 truncate">{nominee.name}</h3>
+                  </div>
+                  {isElected && <Award className="h-5 w-5 text-yellow-500 shrink-0" />}
+                </div>
+                <div className="grid grid-cols-2 gap-3 rounded-md bg-white/70 p-3 text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500">Votes</p>
+                    <p className="font-semibold text-gray-900">{nominee.voteCount || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Percentage</p>
+                    <p className="font-semibold text-gray-900">{(nominee.percentage || 0).toFixed(1)}%</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="bg-gray-50">Rank</TableHead>
                 <TableHead className="bg-gray-50">Nominee</TableHead>
-                <TableHead className="bg-gray-50">Gender</TableHead>
                 <TableHead className="bg-gray-50 text-right">Votes</TableHead>
                 <TableHead className="bg-gray-50 text-right">Percentage</TableHead>
               </TableRow>
@@ -68,16 +94,13 @@ export function ResultsTable({
               {sortedNominees.map((nominee, index) => (
                 <TableRow 
                   key={nominee.id} 
-                  className={`hover:bg-gray-50 ${index < numberToBeElected ? 'bg-green-50' : ''}`}
+                  className={`transition-colors hover:bg-gray-50 ${index < numberToBeElected ? 'bg-green-50' : ''}`}
                 >
                   <TableCell className="text-sm text-gray-500">
                     {index + 1}
                   </TableCell>
                   <TableCell className="font-medium">
                     {nominee.name}
-                  </TableCell>
-                  <TableCell>
-                    {nominee.gender.charAt(0).toUpperCase() + nominee.gender.slice(1)}
                   </TableCell>
                   <TableCell className="text-right font-medium">
                     {nominee.voteCount !== undefined ? nominee.voteCount : '-'}

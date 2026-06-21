@@ -10,7 +10,8 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { useLocation } from "wouter";
+import { useState } from "react";
+import { HelpDialog } from "@/components/help/HelpDialog";
 
 interface HeaderProps {
   toggleSidebar: () => void;
@@ -23,7 +24,7 @@ interface HeaderProps {
 }
 
 export function Header({ toggleSidebar, user }: HeaderProps) {
-  const [, navigate] = useLocation();
+  const [helpOpen, setHelpOpen] = useState(false);
   
   const handleLogout = () => {
     // Clear all authentication data from localStorage
@@ -37,9 +38,9 @@ export function Header({ toggleSidebar, user }: HeaderProps) {
     console.log("Logged out, clearing authToken and user from localStorage");
   };
 
-  // Handle navigation to help/onboarding page
+  // Open the role-based help dialog
   const handleHelpClick = () => {
-    navigate("/onboarding");
+    setHelpOpen(true);
   };
 
   // Get user initials for avatar fallback
@@ -53,7 +54,7 @@ export function Header({ toggleSidebar, user }: HeaderProps) {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 bg-white shadow-sm z-30">
+    <header className="fixed top-0 left-0 right-0 bg-white shadow-sm border-b border-slate-200 z-30">
       <div className="flex items-center justify-between h-16 px-4">
         <div className="flex items-center">
           <Button 
@@ -66,10 +67,11 @@ export function Header({ toggleSidebar, user }: HeaderProps) {
           </Button>
 
           <div className="flex items-center">
-            <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-white">
-              <span className="font-bold">EM</span>
-            </div>
-            <span className="ml-2 text-xl font-semibold text-primary">ElectManager</span>
+            <img
+              src="/logo.png"
+              alt="Vote+"
+              className="h-12 w-auto object-contain"
+            />
           </div>
         </div>
 
@@ -142,6 +144,8 @@ export function Header({ toggleSidebar, user }: HeaderProps) {
           </DropdownMenu>
         </div>
       </div>
+
+      <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </header>
   );
 }

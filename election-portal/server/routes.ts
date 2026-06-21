@@ -1,8 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { createProxyMiddleware, fixRequestBody } from "http-proxy-middleware";
+import { createProxyMiddleware } from "http-proxy-middleware";
 import cookieParser from "cookie-parser";
-import { json, urlencoded } from "express";
 
 const API_URL = process.env.VITE_API_URL || "http://localhost:8000";
 
@@ -15,8 +14,8 @@ const API_URL = process.env.VITE_API_URL || "http://localhost:8000";
  * the remaining path (e.g. "/login") to the full backend path.
  */
 export async function registerRoutes(app: Express): Promise<Server> {
-  app.use(json());
-  app.use(urlencoded({ extended: true }));
+  // No body parsers: this is a streaming reverse proxy. Parsing bodies here
+  // (especially multipart/form-data) breaks file uploads forwarded to the backend.
   app.use(cookieParser());
 
   const makeProxy = (backendBasePath: string) =>
@@ -27,7 +26,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // e.g. mounted at /api/auth → proxy sees /login → rewrite to /api/v1/auth/login
       pathRewrite: (path) => `${backendBasePath}${path}`,
       on: {
-        proxyReq: fixRequestBody,
         error: (err: Error, _req: any, res: any) => {
           console.error("Proxy error:", err.message);
           res.status(502).json({ success: false, message: "Backend service unavailable" });
@@ -59,11 +57,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Analytics → /api/v1/electionAnalytics
   app.use("/api/analytics", makeProxy("/api/v1/electionAnalytics"));
 
+  // Audit Logs → /api/v1/auditLog
+  app.use("/api/audit-logs", makeProxy("/api/v1/auditLog"));
+
   // Users → /api/v1/user
   app.use("/api/users", makeProxy("/api/v1/user"));
 
   // Onboarding → /api/v1/onboarding
   app.use("/api/onboarding", makeProxy("/api/v1/onboarding"));
+
+  // Uploaded images (franchise logos, election banners) served by the backend
+  app.use("/uploads", makeProxy("/uploads"));
 
   const httpServer = createServer(app);
   return httpServer;

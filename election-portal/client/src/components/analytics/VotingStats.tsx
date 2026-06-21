@@ -17,10 +17,13 @@ export function VotingStats({
   electionsEndDate,
   onSendReminder
 }: VotingStatsProps) {
+  const totalVoters = analytics.totalVoters ?? 0;
+  const totalVotesCast = analytics.totalVotesCast ?? 0;
   // Calculate participation percentage
-  const participationPercentage = analytics.totalVoters > 0
-    ? Math.round((analytics.totalVotesCast / analytics.totalVoters) * 100)
+  const participationPercentage = totalVoters > 0
+    ? Math.round((totalVotesCast / totalVoters) * 100)
     : 0;
+  const pendingVoters = analytics.pendingVoters ?? Math.max(totalVoters - totalVotesCast, 0);
 
   return (
     <Card>
@@ -29,7 +32,22 @@ export function VotingStats({
       </CardHeader>
       <CardContent className="p-6">
         <div className="space-y-6">
-          <div>
+          <div className="grid grid-cols-3 gap-2 md:hidden">
+            <div className="rounded-md bg-gray-50 p-3">
+              <p className="text-[11px] font-medium leading-tight text-gray-500">Turnout</p>
+              <p className="mt-1 text-lg font-semibold leading-none text-gray-900">{participationPercentage}%</p>
+            </div>
+            <div className="rounded-md bg-gray-50 p-3">
+              <p className="text-[11px] font-medium leading-tight text-gray-500">Votes</p>
+              <p className="mt-1 text-lg font-semibold leading-none text-gray-900">{totalVotesCast}</p>
+            </div>
+            <div className="rounded-md bg-gray-50 p-3">
+              <p className="text-[11px] font-medium leading-tight text-gray-500">Pending</p>
+              <p className="mt-1 text-lg font-semibold leading-none text-gray-900">{pendingVoters}</p>
+            </div>
+          </div>
+
+          <div className="hidden md:block">
             <h3 className="text-sm font-medium text-gray-700 mb-3">Voter Participation</h3>
             <div className="relative pt-1">
               <div className="flex mb-2 items-center justify-between">
@@ -40,7 +58,7 @@ export function VotingStats({
                 </div>
                 <div className="text-right">
                   <span className="text-xs font-semibold inline-block text-primary">
-                    {analytics.totalVotesCast}/{analytics.totalVoters}
+                    {totalVotesCast}/{totalVoters}
                   </span>
                 </div>
               </div>
@@ -48,21 +66,9 @@ export function VotingStats({
             </div>
           </div>
 
-          <div className="bg-gray-50 rounded-lg p-4">
+          <div className="hidden bg-gray-50 rounded-lg p-4 md:block">
             <h3 className="text-sm font-medium text-gray-700 mb-3">Total Votes Cast</h3>
-            <p className="text-3xl font-bold text-gray-900">{analytics.totalVotesCast}</p>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Gender Distribution</h3>
-            <div className="flex items-center space-x-3 mb-2">
-              <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-              <div className="text-sm">Male (53%)</div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <div className="w-3 h-3 bg-pink-500 rounded-full"></div>
-              <div className="text-sm">Female (47%)</div>
-            </div>
+            <p className="text-3xl font-bold text-gray-900">{totalVotesCast}</p>
           </div>
 
           <div>
@@ -84,9 +90,9 @@ export function VotingStats({
             </div>
           </div>
 
-          <div>
+          <div className="hidden md:block">
             <h3 className="text-sm font-medium text-gray-700 mb-3">Pending Voters</h3>
-            <p className="text-3xl font-bold text-gray-900">{analytics.pendingVoters}</p>
+            <p className="text-3xl font-bold text-gray-900">{pendingVoters}</p>
             <div className="mt-2">
               {onSendReminder && (
                 <Button 

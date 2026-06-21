@@ -13,15 +13,25 @@ import { Pagination, User, Election } from "@/lib/types";
 import { Download, Pencil, Trash2 } from "lucide-react";
 import { VoterSlipPrinter } from "./VoterSlipPrinter";
 
+type VoterRecord = User & {
+  _id?: string;
+  electionAccess?: Array<string | number | { toString: () => string }>;
+};
+
+type ElectionRecord = Election & {
+  _id?: string;
+  id?: string | number;
+};
+
 interface VotersTableProps {
-  voters: User[];
+  voters: VoterRecord[];
   pagination: Pagination;
   onPageChange: (page: number) => void;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
   onPrint?: () => void;
   onExport?: () => void;
-  elections?: Election[];
+  elections?: ElectionRecord[];
 }
 
 export function VotersTable({
@@ -35,14 +45,14 @@ export function VotersTable({
   elections = []
 }: VotersTableProps) {
   // Function to get election names for a voter
-  const getElectionNamesForVoter = (voter: User) => {
+  const getElectionNamesForVoter = (voter: VoterRecord) => {
     if (!voter.electionAccess || !elections || elections.length === 0) {
       return [];
     }
 
     // Convert electionAccess from array of ObjectIds to array of strings
     const voterElectionIds = Array.isArray(voter.electionAccess) 
-      ? voter.electionAccess.map(id => id.toString())
+      ? voter.electionAccess.map((id) => id.toString())
       : [];
 
     // Find matching elections and extract names
@@ -68,7 +78,61 @@ export function VotersTable({
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
+        <div className="divide-y divide-gray-100 md:hidden">
+          {voters.length > 0 ? (
+            voters.map((voter) => {
+              const electionNames = getElectionNamesForVoter(voter);
+              const voterId = voter._id?.toString() || voter.id?.toString() || "";
+              return (
+                <div key={voterId} className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-gray-900 truncate">{voter.username}</h3>
+                      <p className="text-sm text-gray-500 truncate">{voter.fullName || "-"}</p>
+                    </div>
+                    {voter.status === 'active' ? (
+                      <Badge variant="outline" className="bg-green-100 text-green-800 hover:bg-green-100">Active</Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Inactive</Badge>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 rounded-md bg-gray-50 p-3 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500">Registration #</p>
+                      <p className="font-medium text-gray-900">{voter.registrationNumber || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Role</p>
+                      <p className="font-medium text-gray-900 capitalize">{voter.role?.replace('_', ' ') || 'voter'}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <VoterSlipPrinter voter={voter} electionNames={electionNames} />
+                    {onEdit && (
+                      <Button variant="ghost" size="sm" onClick={() => onEdit(voterId)}>
+                        <Pencil className="h-4 w-4 mr-1" /> Edit
+                      </Button>
+                    )}
+                    {onDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:text-red-900 hover:bg-red-50"
+                        onClick={() => onDelete(voterId)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" /> Delete
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="p-8 text-center text-sm text-gray-500">No voters found</div>
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -87,7 +151,7 @@ export function VotersTable({
                   const electionNames = getElectionNamesForVoter(voter);
                   
                   return (
-                    <TableRow key={voter._id || voter.id} className="hover:bg-gray-50">
+                    <TableRow key={voter._id || voter.id} className="transition-colors hover:bg-gray-50">
                       <TableCell className="font-medium">
                         {voter.username}
                       </TableCell>

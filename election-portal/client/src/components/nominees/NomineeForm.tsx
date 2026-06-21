@@ -33,9 +33,7 @@ import { User, Upload, FileSpreadsheet, List, UploadCloud } from 'lucide-react';
 const singleNomineeSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters' }),
   electionId: z.string().min(1, { message: 'Please select an election' }),
-  gender: z.enum(['male', 'female'], { 
-    required_error: 'Gender is required'
-  }),
+  gender: z.enum(['male', 'female']).optional(),
 });
 
 // Form schema for bulk nominees
@@ -68,6 +66,15 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<string>(isEdit ? 'single' : 'single');
   const [importFile, setImportFile] = useState<File | null>(null);
+
+  // Resolve whether a given election uses gender-based selection.
+  const isGenderBased = (electionId?: string) => {
+    if (!electionId) return false;
+    const found = (elections || []).find(
+      (e) => (e._id?.toString() || (e as any).id?.toString()) === electionId
+    );
+    return !!(found as any)?.genderBasedSelection;
+  };
 
   // Single nominee form
   const singleForm = useForm<SingleNomineeFormValues>({
@@ -122,7 +129,8 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
 
         toast({
           title: 'Nominee updated',
-          description: 'The nominee has been updated successfully'
+          description: 'The nominee has been updated successfully',
+          variant: 'success'
         });
       } else {
         // Create new nominee
@@ -138,7 +146,8 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
 
         toast({
           title: 'Nominee created',
-          description: 'The nominee has been successfully created'
+          description: 'The nominee has been successfully created',
+          variant: 'success'
         });
       }
 
@@ -156,6 +165,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
   // Bulk nominees submission handler
   const onSubmitBulk = async (data: BulkNomineeFormValues) => {
     try {
+      const genderBased = isGenderBased(data.electionId);
       // First, normalize the input by combining both commas and newlines as separators
       const input = data.namesWithGender.replace(/\n/g, ',');
       
@@ -166,7 +176,17 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
       for (const entry of entries) {
         const trimmed = entry.trim();
         if (!trimmed) continue;
-        
+
+        if (!genderBased) {
+          // Neutral selection: each entry is simply a nominee name.
+          nominees.push({
+            name: trimmed,
+            electionId: data.electionId,
+            status: 'active'
+          });
+          continue;
+        }
+
         // Parse the name-gender format (e.g., "John Doe-m" or "Jane Smith-f")
         const parts = trimmed.split('-');
         
@@ -225,7 +245,8 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
 
       toast({
         title: 'Nominees created',
-        description: `Successfully created ${nominees.length} nominees`
+        description: `Successfully created ${nominees.length} nominees`,
+        variant: 'success'
       });
 
       bulkForm.reset();
@@ -253,7 +274,8 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
 
       toast({
         title: 'Nominees imported',
-        description: 'Successfully imported nominees from the selected election'
+        description: 'Successfully imported nominees from the selected election',
+        variant: 'success'
       });
 
       importPreviousForm.reset();
@@ -294,7 +316,8 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
 
       toast({
         title: 'File uploaded',
-        description: 'The nominees are being processed and will be added shortly'
+        description: 'The nominees are being processed and will be added shortly',
+        variant: 'success'
       });
 
       setImportFile(null);
@@ -371,6 +394,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                 />
 
                 {/* Nominee gender */}
+                {isGenderBased(singleForm.watch('electionId')) && (
                 <FormField
                   control={singleForm.control}
                   name="gender"
@@ -395,6 +419,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                     </FormItem>
                   )}
                 />
+                )}
               </div>
 
               <div className="flex justify-end space-x-2">
@@ -477,6 +502,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                     />
                     
                     {/* Nominee gender */}
+                    {isGenderBased(singleForm.watch('electionId')) && (
                     <FormField
                       control={singleForm.control}
                       name="gender"
@@ -501,6 +527,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                         </FormItem>
                       )}
                     />
+                    )}
                   </div>
 
                   <div className="flex justify-end space-x-2">
@@ -566,17 +593,24 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                       name="namesWithGender"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Nominee Names with Gender (comma-separated)</FormLabel>
+                          <FormLabel>
+                            {isGenderBased(bulkForm.watch('electionId'))
+                              ? 'Nominee Names with Gender (comma-separated)'
+                              : 'Nominee Names (comma-separated)'}
+                          </FormLabel>
                           <FormControl>
                             <Textarea 
-                              placeholder="Enter nominee names with gender separated by commas, e.g: John Doe-male, Jane Smith-female, Alex Johnson-other"
+                              placeholder={isGenderBased(bulkForm.watch('electionId'))
+                                ? 'Enter nominee names with gender separated by commas, e.g: John Doe-m, Jane Smith-f'
+                                : 'Enter nominee names separated by commas, e.g: John Doe, Jane Smith, Alex Johnson'}
                               className="min-h-[100px]"
                               {...field} 
                             />
                           </FormControl>
                           <div className="text-xs text-muted-foreground">
-                            Format: Name-gender (m for male, f for female) separated by commas.
-                            Example: John Doe-m, Jane Smith-f
+                            {isGenderBased(bulkForm.watch('electionId'))
+                              ? 'Format: Name-gender (m for male, f for female) separated by commas. Example: John Doe-m, Jane Smith-f'
+                              : 'Enter one name per entry, separated by commas or new lines.'}
                           </div>
                           <FormMessage />
                         </FormItem>

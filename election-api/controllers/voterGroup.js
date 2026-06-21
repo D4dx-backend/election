@@ -1,4 +1,5 @@
 const VoterGroup = require("../model/VoterGroup");
+const { logUserActivity } = require("../utils/auditLog");
 
 // @desc      ADD VOTER GROUP
 // @route     POST /api/v1/voter-groups
@@ -46,6 +47,24 @@ exports.deleteVoterGroupById = async (req, res) => {
 // @access    Protected
 exports.getVoterGroups = async (req, res) => {
   try {
+    // Opt-in server-side pagination (only when ?page is provided)
+    if (req.query.page !== undefined) {
+      const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+      const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
+      const total = await VoterGroup.countDocuments();
+      const paged = await VoterGroup.find()
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
+      const totalPages = Math.max(Math.ceil(total / limit), 1);
+      return res.status(200).json({
+        success: true,
+        count: paged.length,
+        pagination: { total, page, pageSize: limit, totalPages },
+        data: paged,
+      });
+    }
+
     const voterGroups = await VoterGroup.find();
     res.status(200).json({ success: true, count: voterGroups.length, data: voterGroups });
   } catch (err) {

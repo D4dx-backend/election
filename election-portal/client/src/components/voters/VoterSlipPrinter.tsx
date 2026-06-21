@@ -186,9 +186,14 @@ Elections: ${electionNames.join(', ') || 'None assigned'}
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="text-blue-600 hover:text-blue-800 hover:bg-blue-50">
-          <Printer className="h-4 w-4 mr-1" />
-          Print
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+          aria-label="Print voter slip"
+          title="Print voter slip"
+        >
+          <Printer className="h-4 w-4" />
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[500px]">

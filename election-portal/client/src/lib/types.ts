@@ -28,10 +28,14 @@ export interface ElectionWithDetails extends MongoDBFormat {
   status: string;
   maxVoters?: number;
   maxNominees?: number;
+  genderBasedSelection?: boolean;
   maleMinimum?: number;
   femaleMinimum?: number;
   selfRegOpen?: boolean;
   votingOpen?: boolean;
+  resultsPublished?: boolean;
+  resultsPublishedAt?: string | Date | null;
+  voterResultDisplay?: 'result_only' | 'percentage' | 'score' | 'full';
   nomineeDisplayOrder?: string;
   electionGroupId?: string | number;
   createdBy?: string | number;
@@ -74,6 +78,7 @@ export interface Pagination {
   page: number;
   pageSize: number;
   total: number;
+  totalPages?: number;
 }
 
 export interface ElectionFilter {
