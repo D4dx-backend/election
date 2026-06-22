@@ -39,13 +39,29 @@ export default function Dashboard() {
 
   // Fetch recent elections from API
   const {
-    data: recentElections,
+    data: electionsResponse,
     isLoading: electionsLoading,
     isError: electionsError,
     error: electionsFetchError,
-  } = useQuery<ElectionWithDetails[]>({
+  } = useQuery<{ data?: ElectionWithDetails[]; success?: boolean }>({
     queryKey: ['/api/elections'],
+    queryFn: async () => {
+      const res = await fetch('/api/elections', {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        },
+      });
+      if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+      return res.json();
+    },
   });
+
+  // Safely extract array regardless of response shape
+  const recentElections: ElectionWithDetails[] = Array.isArray(electionsResponse)
+    ? electionsResponse
+    : Array.isArray(electionsResponse?.data)
+    ? electionsResponse.data
+    : [];
 
   useEffect(() => {
     if (statsError) {
@@ -71,7 +87,7 @@ export default function Dashboard() {
 
   // Use actual data if available, fall back to mock data if needed
   const displayStats = stats || mockDashboardStats;
-  const displayElections = recentElections ? recentElections.slice(0, 3) : getRecentElections(3);
+  const displayElections = recentElections.length > 0 ? recentElections.slice(0, 3) : getRecentElections(3);
 
   useEffect(() => {
     document.title = "Dashboard | Vote+";

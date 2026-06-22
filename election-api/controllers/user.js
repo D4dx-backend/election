@@ -247,10 +247,21 @@ exports.generateVoters = async (req, res) => {
 exports.createFranchiseAdmin = async (req, res) => {
   try {
     const { username, password, fullName, franchiseId } = req.body;
-    const existing = await User.findOne({ username });
+    if (!username || typeof username !== "string" || !username.trim()) {
+      return res.status(400).json({ success: false, message: "username is required." });
+    }
+    if (!password || typeof password !== "string" || !password.trim()) {
+      return res.status(400).json({ success: false, message: "password is required." });
+    }
+    const existing = await User.findOne({ username: username.trim() });
     if (existing) return res.status(409).json({ success: false, message: "Username already exists." });
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ username, password: hashedPassword, fullName, franchiseId, role: "franchise_admin" });
+    const userData = { username: username.trim(), password: hashedPassword, fullName, role: "franchise_admin" };
+    // Only set franchiseId if it is a non-empty string (prevents Mongoose CastError)
+    if (franchiseId && String(franchiseId).trim()) {
+      userData.franchiseId = franchiseId;
+    }
+    const user = await User.create(userData);
     res.status(201).json({ success: true, message: "Franchise admin created.", data: { id: user._id, username: user.username, role: user.role } });
   } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
 };

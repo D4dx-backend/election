@@ -37,9 +37,6 @@ app.use(
   })
 );
 
-// Connect to database
-connectDB();
-
 app.set("view engine", "ejs");
 app.use("/images", express.static("./public/user"));
 app.use("/images", express.static("./public/proteincategory"));
@@ -83,4 +80,9 @@ app.use("/api/v1/onboarding", onboarding);
 app.use(handleError);
 
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`));
+
+// Connect to DB first, then start listening — ensures migrations run before requests arrive
+(async () => {
+  await connectDB();
+  app.listen(PORT, () => console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`));
+})();
