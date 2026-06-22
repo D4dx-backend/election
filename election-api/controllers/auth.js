@@ -81,7 +81,13 @@ exports.getCurrentUser = async (req, res) => {
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
-    res.status(200).json({ success: true, user });
+    res.status(200).json({
+      success: true,
+      user: {
+        ...user,
+        id: user._id.toString(), // explicit string id, consistent with /auth/login response
+      },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });

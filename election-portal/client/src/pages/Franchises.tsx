@@ -367,7 +367,12 @@ export default function Franchises() {
   
   const handleAdminSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    createFranchiseAdminMutation.mutate(adminFormData);
+    // Always derive franchiseId directly from selectedFranchise so a stale
+    // adminFormData closure can never send an empty string to the API.
+    createFranchiseAdminMutation.mutate({
+      ...adminFormData,
+      franchiseId: selectedFranchise?._id || adminFormData.franchiseId,
+    });
   };
   
   const handleDeleteAdmin = (id: string) => {
