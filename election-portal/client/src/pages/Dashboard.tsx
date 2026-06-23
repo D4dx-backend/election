@@ -96,15 +96,15 @@ export default function Dashboard() {
   return (
     <MainLayout>
       <div>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <div className="mb-4">
+          <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-sm text-gray-600">
             {user ? `Welcome, ${user.fullName || user.username}` : 'Overview of all election activities'}
           </p>
         </div>
 
         {/* Stats Overview */}
-        <div className="grid grid-cols-3 gap-2 sm:gap-4 md:gap-6 mb-6">
+        <div className="grid grid-cols-3 gap-3 mb-4">
           {statsLoading ? (
             <>
               <Skeleton className="h-24 w-full md:h-28" />

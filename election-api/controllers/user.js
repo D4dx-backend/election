@@ -2,6 +2,52 @@ const User = require("../model/User");
 const bcrypt = require("bcryptjs");
 const { logUserActivity } = require("../utils/auditLog");
 
+// @desc      ADD EXISTING USERS TO AN ELECTION
+// @route     POST /api/v1/users/add-to-election
+// @access    Protected
+exports.addUsersToElection = async (req, res) => {
+  try {
+    const { userIds, electionIds } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'userIds array is required.' });
+    }
+    if (!Array.isArray(electionIds) || electionIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'electionIds array is required.' });
+    }
+    await User.updateMany(
+      { _id: { $in: userIds } },
+      { $addToSet: { electionAccess: { $each: electionIds } } }
+    );
+    res.status(200).json({ success: true, data: { updated: userIds.length } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
+// @desc      ADD EXISTING USERS TO AN ELECTION
+// @route     POST /api/v1/users/add-to-election
+// @access    Protected
+exports.addUsersToElection = async (req, res) => {
+  try {
+    const { userIds, electionIds } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'userIds array is required.' });
+    }
+    if (!Array.isArray(electionIds) || electionIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'electionIds array is required.' });
+    }
+    await User.updateMany(
+      { _id: { $in: userIds } },
+      { $addToSet: { electionAccess: { $each: electionIds } } }
+    );
+    res.status(200).json({ success: true, data: { updated: userIds.length } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
 // @desc      ADD USER
 // @route     POST /api/v1/users
 // @access    public
@@ -158,6 +204,15 @@ exports.createVoter = async (req, res) => {
   }
 };
 
+function generateRandomPassword(length = 8) {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 exports.generateVoters = async (req, res) => {
   try {
     const {
@@ -202,11 +257,12 @@ exports.generateVoters = async (req, res) => {
       const seq = start + i;
       const username = `${prefix}${seq}`;
       if (existingSet.has(username)) continue;
-      const plainPassword = `${prefix.toLowerCase()}${seq}`;
+      const plainPassword = generateRandomPassword(8);
       const hashedPassword = await bcrypt.hash(plainPassword, 10);
       docs.push({
         username,
         password: hashedPassword,
+        plainPassword,
         fullName: username,
         role: "voter",
         isVoter: true,
@@ -231,12 +287,20 @@ exports.generateVoters = async (req, res) => {
     }
 
     const created = await User.insertMany(docs, { ordered: false });
+
+    // If a voterGroupId was provided, push the new user IDs into that group
+    if (voterGroupId && created.length > 0) {
+      const VoterGroup = require('../model/VoterGroup');
+      const newIds = created.map(u => u._id);
+      await VoterGroup.findByIdAndUpdate(voterGroupId, { $push: { voters: { $each: newIds } } });
+    }
+
     res.status(201).json({
       success: true,
       message: `Generated ${created.length} voter accounts.`,
       count: created.length,
       skipped: num - created.length,
-      data: created.map((u) => ({ id: u._id, username: u.username })),
+      data: created.map((u) => ({ id: u._id, username: u.username, plainPassword: u.plainPassword })),
     });
   } catch (err) {
     console.error(err);

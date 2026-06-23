@@ -560,12 +560,14 @@ export const generateVoters = async (req: Request, res: Response, next: NextFunc
     for (let i = 0; i < count; i++) {
       const sequenceNumber = nextStartingNumber + i;
       const username = `${prefix}${sequenceNumber.toString().padStart(4, '0')}`;
-      const password = `${prefix.toLowerCase()}${sequenceNumber}`; // Simple password scheme
+      const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+      const plainPassword = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 
       // Create voter data object with all required fields
       const voterData: any = {
         username,
-        password,
+        password: plainPassword,
+        plainPassword,
         role: 'voter',
         franchiseId,
         createdBy: req.user._id,
@@ -589,11 +591,12 @@ export const generateVoters = async (req: Request, res: Response, next: NextFunc
     if (voters.length > 0) {
       const createdVoters = await User.create(voters, { session, ordered: true });
 
-        // Prepare response data (exclude passwords)
+        // Prepare response data (exclude hashed password)
         for (const voter of createdVoters) {
           generatedVoters.push({
             id: voter._id,
             username: voter.username,
+            plainPassword: voter.plainPassword,
             sequenceNumber: voter.sequenceNumber,
             prefix: voter.prefix
           });

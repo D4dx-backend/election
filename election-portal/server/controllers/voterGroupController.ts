@@ -232,11 +232,13 @@ export const generateVoters = async (req: Request, res: Response, next: NextFunc
     for (let i = 0; i < count; i++) {
       const sequenceNumber = startingNumber + i;
       const username = `${voterPrefix}${sequenceNumber.toString().padStart(4, '0')}`;
-      const password = `${voterPrefix.toLowerCase()}${sequenceNumber}`; // Simple password scheme
+      const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+      const plainPassword = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 
       voters.push({
         username,
-        password,
+        password: plainPassword,
+        plainPassword,
         role: 'voter',
         franchiseId: franchiseId,
         createdBy: req.user._id,

@@ -20,6 +20,7 @@ export const users = pgTable("users", {
   isVoter: boolean("is_voter").default(false),
   prefix: text("prefix"),
   sequenceNumber: integer("sequence_number"),
+  plainPassword: text("plain_password"),
 });
 
 // Franchise table

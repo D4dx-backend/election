@@ -54,12 +54,12 @@ export function ElectionsTable({ elections, onDelete, onStatusChange }: Election
                     <p className="font-medium text-gray-900">{format(new Date(election.electionDate), 'yyyy-MM-dd')}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">Seats</p>
-                    <p className="font-medium text-gray-900">{election.numberToBeElected}</p>
+                    <p className="text-xs text-gray-500">Nominees</p>
+                    <p className="font-medium text-gray-900">{election.nomineeCount ?? election.maxNominees ?? 0}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Voters</p>
-                    <p className="font-medium text-gray-900">{election.maxVoters}</p>
+                    <p className="font-medium text-gray-900">{election.voterCount ?? election.maxVoters ?? 0}</p>
                   </div>
                 </div>
 
@@ -117,6 +117,7 @@ export function ElectionsTable({ elections, onDelete, onStatusChange }: Election
                 <TableHead className="bg-gray-50">Organization</TableHead>
                 <TableHead className="bg-gray-50">Date</TableHead>
                 <TableHead className="bg-gray-50">Positions</TableHead>
+                <TableHead className="bg-gray-50">Nominees</TableHead>
                 <TableHead className="bg-gray-50">Voters</TableHead>
                 <TableHead className="bg-gray-50">Status</TableHead>
                 <TableHead className="bg-gray-50 text-right">Actions</TableHead>
@@ -145,7 +146,10 @@ export function ElectionsTable({ elections, onDelete, onStatusChange }: Election
                     {election.numberToBeElected}
                   </TableCell>
                   <TableCell>
-                    {election.maxVoters}
+                    {election.nomineeCount ?? election.maxNominees ?? 0}
+                  </TableCell>
+                  <TableCell>
+                    {election.voterCount ?? election.maxVoters ?? 0}
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={election.status} />

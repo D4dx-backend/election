@@ -66,8 +66,8 @@ export function VotersTable({
 
   return (
     <Card>
-      <CardHeader className="px-6 py-4 border-b border-gray-200 flex flex-row items-center justify-between">
-        <CardTitle className="text-lg font-medium text-gray-900">Voter Accounts</CardTitle>
+      <CardHeader className="px-4 py-3 border-b border-gray-200 flex flex-row items-center justify-between">
+        <CardTitle className="text-sm font-semibold text-gray-900">Voter Accounts</CardTitle>
         <div className="flex space-x-2">
           {onExport && (
             <Button variant="outline" size="sm" onClick={onExport}>
@@ -151,7 +151,7 @@ export function VotersTable({
                   const electionNames = getElectionNamesForVoter(voter);
                   
                   return (
-                    <TableRow key={voter._id || voter.id} className="transition-colors hover:bg-gray-50">
+                    <TableRow key={voter._id || voter.id} className="transition-colors hover:bg-gray-50 text-sm">
                       <TableCell className="font-medium">
                         {voter.username}
                       </TableCell>
