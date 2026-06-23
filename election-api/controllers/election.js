@@ -1,4 +1,6 @@
 const Election = require("../model/Election");
+const User = require("../model/User");
+const Nominee = require("../model/Nominee");
 const { logUserActivity } = require("../utils/auditLog");
 
 // Multipart form fields arrive as strings; coerce the known boolean fields.
@@ -85,8 +87,6 @@ exports.publishResults = async (req, res) => {
 
 exports.getElections = async (req, res) => {
   try {
-    // Scope elections by the requesting user's role so each franchise only
-    // sees its own elections (super admin sees everything).
     const filter = {};
     const user = req.user || {};
     if (user.role === "franchise_admin") {
@@ -95,12 +95,40 @@ exports.getElections = async (req, res) => {
       const ids = Array.isArray(user.electionAccess) ? user.electionAccess : [];
       filter._id = { $in: ids };
     } else if (req.query.franchiseId) {
-      // super admin may optionally narrow to a single franchise
       filter.franchiseId = req.query.franchiseId;
     }
     if (req.query.status) filter.status = req.query.status;
 
-    // Opt-in server-side pagination (only when ?page is provided)
+    // Helper: enrich elections with real voter + nominee counts
+    const enrichElections = async (electionDocs) => {
+      if (electionDocs.length === 0) return [];
+      const electionIds = electionDocs.map(e => e._id);
+
+      const [voterAgg, nomineeAgg] = await Promise.all([
+        User.aggregate([
+          { $match: { electionAccess: { $in: electionIds } } },
+          { $unwind: '$electionAccess' },
+          { $match: { electionAccess: { $in: electionIds } } },
+          { $group: { _id: '$electionAccess', count: { $sum: 1 } } },
+        ]),
+        Nominee.aggregate([
+          { $match: { electionId: { $in: electionIds } } },
+          { $group: { _id: '$electionId', count: { $sum: 1 } } },
+        ]),
+      ]);
+
+      const voterMap = {};
+      voterAgg.forEach(v => { voterMap[v._id?.toString()] = v.count; });
+      const nomineeMap = {};
+      nomineeAgg.forEach(n => { nomineeMap[n._id?.toString()] = n.count; });
+
+      return electionDocs.map(e => ({
+        ...e.toObject(),
+        voterCount: voterMap[e._id?.toString()] || 0,
+        nomineeCount: nomineeMap[e._id?.toString()] || 0,
+      }));
+    };
+
     if (req.query.page !== undefined) {
       const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
       const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
@@ -110,16 +138,18 @@ exports.getElections = async (req, res) => {
         .skip((page - 1) * limit)
         .limit(limit);
       const totalPages = Math.max(Math.ceil(total / limit), 1);
+      const enriched = await enrichElections(paged);
       return res.status(200).json({
         success: true,
-        count: paged.length,
+        count: enriched.length,
         pagination: { total, page, pageSize: limit, totalPages },
-        data: paged,
+        data: enriched,
       });
     }
 
     const elections = await Election.find(filter);
-    res.status(200).json({ success: true, count: elections.length, data: elections });
+    const enriched = await enrichElections(elections);
+    res.status(200).json({ success: true, count: enriched.length, data: enriched });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });

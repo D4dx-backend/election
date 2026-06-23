@@ -20,6 +20,7 @@ export interface IUser extends Document {
   prefix?: string;
   sequenceNumber?: number;
   onboardingCompleted?: boolean;
+  plainPassword?: string;
   comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
@@ -87,6 +88,9 @@ const UserSchema: Schema = new Schema({
   onboardingCompleted: {
     type: Boolean,
     default: false
+  },
+  plainPassword: {
+    type: String
   }
 }, {
   timestamps: true // This adds createdAt and updatedAt fields

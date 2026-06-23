@@ -204,7 +204,7 @@ export function BulkVoterSlipPrinter({
         // Voter details
         doc.setFontSize(10);
         doc.text(`Username: ${voter.username}`, x + 5, y + 20);
-        doc.text(`Password: ${voter.username?.toLowerCase() || 'N/A'}`, x + 5, y + 27);
+        doc.text(`Password: ${(voter as any).plainPassword || voter.username?.toLowerCase() || 'N/A'}`, x + 5, y + 27);
         doc.text(`Status: ${voter.status || 'Active'}`, x + 5, y + 34);
         
         // Elections list

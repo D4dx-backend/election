@@ -13,6 +13,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { BulkVoterGenerationOptions } from "@/lib/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 interface VoterBulkGeneratorProps {
   elections: Array<{
@@ -24,7 +25,14 @@ interface VoterBulkGeneratorProps {
     _id: string;
     name: string;
   }>;
+  voterGroups?: Array<{
+    _id: string;
+    name?: string;
+    description?: string;
+    voters?: string[];
+  }>;
   onGenerate: (options: BulkVoterGenerationOptions) => void;
+  onAssignVoterGroup?: (voterIds: string[]) => Promise<void>;
   isGenerating?: boolean;
   fixedElectionId?: string;
 }
@@ -32,16 +40,20 @@ interface VoterBulkGeneratorProps {
 export function VoterBulkGenerator({ 
   elections, 
   electionGroups = [],
+  voterGroups = [],
   onGenerate,
+  onAssignVoterGroup,
   isGenerating = false,
   fixedElectionId,
 }: VoterBulkGeneratorProps) {
   const [prefix, setPrefix] = useState<string>("VOTE");
   const [startingNumber, setStartingNumber] = useState<number>(1001);
-  const [count, setCount] = useState<number>(10); // Reduced default to avoid overloading system
+  const [count, setCount] = useState<number>(10);
   const [selectedElections, setSelectedElections] = useState<string[]>(fixedElectionId ? [fixedElectionId] : []);
   const [selectedElectionGroupId, setSelectedElectionGroupId] = useState<string>("");
-  const [assignmentType, setAssignmentType] = useState<"election" | "electionGroup">("election");
+  const [selectedVoterGroupId, setSelectedVoterGroupId] = useState<string>("");
+  const [assignmentType, setAssignmentType] = useState<"election" | "electionGroup" | "voterGroup">("election");
+  const [assigningGroupId, setAssigningGroupId] = useState<string | null>(null);
 
   useEffect(() => {
     if (fixedElectionId) {
@@ -96,6 +108,8 @@ export function VoterBulkGenerator({
       options.electionIds = selectedElections;
     } else if (assignmentType === 'electionGroup' && selectedElectionGroupId) {
       options.electionGroupId = selectedElectionGroupId;
+    } else if (assignmentType === 'voterGroup' && selectedVoterGroupId) {
+      options.voterGroupId = selectedVoterGroupId;
     }
 
     onGenerate(options);
@@ -109,7 +123,8 @@ export function VoterBulkGenerator({
     count <= 1000 && // Reasonable limit
     (
       (assignmentType === 'election' && selectedElections.length > 0) || 
-      (assignmentType === 'electionGroup' && selectedElectionGroupId !== "")
+      (assignmentType === 'electionGroup' && selectedElectionGroupId !== "") ||
+      (assignmentType === 'voterGroup' && selectedVoterGroupId !== "")
     );
 
   return (
@@ -174,11 +189,12 @@ export function VoterBulkGenerator({
             <Tabs 
               defaultValue="election" 
               className="mt-2" 
-              onValueChange={(value) => setAssignmentType(value as 'election' | 'electionGroup')}
+              onValueChange={(value) => setAssignmentType(value as 'election' | 'electionGroup' | 'voterGroup')}
             >
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="election">Single Election</TabsTrigger>
                 <TabsTrigger value="electionGroup">Election Group</TabsTrigger>
+                <TabsTrigger value="voterGroup">Voter Group</TabsTrigger>
               </TabsList>
 
               <TabsContent value="election" className="mt-4">
@@ -227,7 +243,6 @@ export function VoterBulkGenerator({
                   <SelectContent>
                     {electionGroups && electionGroups.length > 0 ? (
                       electionGroups.map((group) => {
-                        // Handle both MongoDB and regular ID formats safely
                         const id = group?._id?.toString() || 
                                   (typeof group?.id === 'object' ? group.id?.toString() : 
                                   (group?.id ? String(group.id) : ''));
@@ -253,6 +268,48 @@ export function VoterBulkGenerator({
                   </div>
                 )}
               </TabsContent>
+
+              <TabsContent value="voterGroup" className="mt-4">
+                <Label>Select Voter Group</Label>
+                <p className="text-xs text-gray-500 mb-3">New voters will be placed in the selected group and inherit its election access.</p>
+                {voterGroups && voterGroups.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
+                    {voterGroups.map((group) => {
+                      const id = group?._id?.toString();
+                      if (!id) return null;
+                      const isSelected = selectedVoterGroupId === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          disabled={isGenerating}
+                          onClick={() => {
+                            setSelectedVoterGroupId(id);
+                            if ((group as any).prefix) setPrefix((group as any).prefix);
+                          }}
+                          className={cn(
+                            "flex flex-col items-start gap-0.5 p-3 rounded-lg border-2 text-left transition-colors w-full",
+                            isSelected
+                              ? "border-primary bg-primary/5"
+                              : "border-gray-200 hover:border-primary/50 hover:bg-gray-50"
+                          )}
+                        >
+                          <span className="text-sm font-medium text-gray-800 truncate w-full">{group?.name || 'Untitled Group'}</span>
+                          <span className="text-xs text-gray-400">{group?.voters?.length || 0} voters</span>
+                          {(group as any).prefix && <span className="text-xs font-mono text-primary/70">prefix: {(group as any).prefix}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 py-4 text-center border rounded-md">No voter groups available. Create one first.</p>
+                )}
+                {selectedVoterGroupId && voterGroups.find(g => g._id === selectedVoterGroupId) && (
+                  <p className="text-xs text-green-600 mt-2 font-medium">
+                    ✓ Voters will be added to <strong>{voterGroups.find(g => g._id === selectedVoterGroupId)?.name}</strong>
+                  </p>
+                )}
+              </TabsContent>
             </Tabs>
           </div>
         )}
@@ -263,9 +320,7 @@ export function VoterBulkGenerator({
           <p className="text-sm text-blue-700">
             <strong>Note:</strong> Generated voter accounts will have usernames in the format 
             <code className="mx-1 px-1 bg-blue-100 rounded">{prefix}XXXX</code> 
-            and passwords in the format 
-            <code className="mx-1 px-1 bg-blue-100 rounded">{prefix.toLowerCase()}XXXX</code>
-            where XXXX is the sequential number.
+            and unique randomly generated passwords. Passwords will be printed on voter credential slips.
           </p>
         </div>
 
@@ -284,6 +339,42 @@ export function VoterBulkGenerator({
             )}
           </Button>
         </div>
+
+        {/* ── Assign existing voter group to this election ── */}
+        {fixedElectionId && onAssignVoterGroup && voterGroups.length > 0 && (
+          <div className="border-t pt-4 mt-4">
+            <p className="text-sm font-semibold text-gray-700 mb-0.5">Assign Existing Voter Group</p>
+            <p className="text-xs text-gray-500 mb-3">Add all voters from a group directly into this election.</p>
+            <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+              {voterGroups.map((group) => {
+                const id = group._id;
+                const voterIds = group.voters || [];
+                const isAssigning = assigningGroupId === id;
+                return (
+                  <div key={id} className="flex items-center justify-between px-3 py-2 border rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{group.name || 'Untitled Group'}</p>
+                      <p className="text-xs text-gray-400">{voterIds.length} voters{group.description ? ` · ${group.description}` : ''}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={voterIds.length === 0 || isAssigning || !!assigningGroupId}
+                      onClick={async () => {
+                        setAssigningGroupId(id);
+                        try { await onAssignVoterGroup(voterIds); }
+                        finally { setAssigningGroupId(null); }
+                      }}
+                      className="shrink-0 ml-3"
+                    >
+                      {isAssigning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Assign ${voterIds.length > 0 ? voterIds.length : ''} Voters`}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

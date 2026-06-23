@@ -12,6 +12,10 @@ const VoterGroupSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     }],
+    electionIds: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Election",
+    }],
     prefix: String,
     startingNumber: Number,
     createdBy: {

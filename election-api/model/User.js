@@ -45,6 +45,7 @@ const UserSchema = new mongoose.Schema(
     }],
     isVoter: Boolean,
     onboardingCompleted: { type: Boolean, default: false },
+    plainPassword: String, // stored for credential printing
     voterMetadata: {
       prefix: String,
       sequenceNumber: Number,
