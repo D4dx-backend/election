@@ -3,7 +3,9 @@ import {
   LayoutDashboard,
   Building,
   Vote,
+  Users,
   Settings,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -15,74 +17,64 @@ interface BottomNavItem {
 
 /**
  * Mobile-first bottom navigation bar.
- * Visible only on small screens (hidden on lg and up where the sidebar is used).
- * Navigation items adapt to the logged-in user's role.
+ * Visible only on small screens (hidden on lg+ where the sidebar takes over).
+ * Items are role-specific — maximum 5 to stay uncluttered.
  */
 export function BottomNav() {
   const [location] = useLocation();
 
-  // Read role from localStorage (set at login time)
   let role = "voter";
   try {
     const stored = localStorage.getItem("user");
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (parsed && typeof parsed === "object" && parsed.role) {
-        role = parsed.role;
-      }
+      if (parsed?.role) role = parsed.role;
     }
   } catch {
-    // ignore parse errors and fall back to default role
+    // ignore parse errors — fall back to "voter"
   }
 
-  const isSuperAdmin = role === "super_admin";
+  const isSuperAdmin    = role === "super_admin";
   const isFranchiseAdmin = role === "franchise_admin";
   const isElectionAdmin = role === "election_admin";
 
   const items: BottomNavItem[] = [];
 
-  // Dashboard for all admin roles
-  if (isSuperAdmin || isFranchiseAdmin || isElectionAdmin) {
-    items.push({
-      href: "/",
-      label: "Home",
-      icon: <LayoutDashboard className="h-5 w-5" />,
-    });
-  }
-
-  // Franchises only for super admin
+  // ── Super Admin ──
   if (isSuperAdmin) {
-    items.push({
-      href: "/franchises",
-      label: "Franchises",
-      icon: <Building className="h-5 w-5" />,
-    });
+    items.push(
+      { href: "/",           label: "Home",       icon: <LayoutDashboard className="h-5 w-5" /> },
+      { href: "/franchises", label: "Franchises", icon: <Building        className="h-5 w-5" /> },
+      { href: "/admins",     label: "Admins",     icon: <Users           className="h-5 w-5" /> },
+      { href: "/settings",   label: "Settings",   icon: <Settings        className="h-5 w-5" /> },
+    );
   }
 
-  // Elections for franchise/election admins (super admin manages franchises, not elections directly)
-  if (isFranchiseAdmin || isElectionAdmin) {
-    items.push({
-      href: "/elections",
-      label: "Elections",
-      icon: <Vote className="h-5 w-5" />,
-    });
+  // ── Franchise Admin ──
+  if (isFranchiseAdmin) {
+    items.push(
+      { href: "/",          label: "Home",      icon: <LayoutDashboard className="h-5 w-5" /> },
+      { href: "/elections", label: "Elections", icon: <Vote            className="h-5 w-5" /> },
+      { href: "/voters",    label: "Voters",    icon: <Users           className="h-5 w-5" /> },
+      { href: "/analytics", label: "Analytics", icon: <BarChart3       className="h-5 w-5" /> },
+      { href: "/settings",  label: "Settings",  icon: <Settings        className="h-5 w-5" /> },
+    );
   }
 
-  // Settings for every admin role
-  if (isSuperAdmin || isFranchiseAdmin || isElectionAdmin) {
-    items.push({
-      href: "/settings",
-      label: "Settings",
-      icon: <Settings className="h-5 w-5" />,
-    });
+  // ── Election Admin ──
+  if (isElectionAdmin) {
+    items.push(
+      { href: "/",          label: "Home",      icon: <LayoutDashboard className="h-5 w-5" /> },
+      { href: "/elections", label: "Elections", icon: <Vote            className="h-5 w-5" /> },
+      { href: "/voters",    label: "Voters",    icon: <Users           className="h-5 w-5" /> },
+      { href: "/analytics", label: "Analytics", icon: <BarChart3       className="h-5 w-5" /> },
+      { href: "/settings",  label: "Settings",  icon: <Settings        className="h-5 w-5" /> },
+    );
   }
 
-  // Keep the bar uncluttered on mobile: cap at 5 items
+  // Voters have their own layout (VoterLayout) with its own bottom nav
   const navItems = items.slice(0, 5);
-
-  if (navItems.length === 0) {
-    return null;
-  }
+  if (navItems.length === 0) return null;
 
   const isActive = (href: string) =>
     href === "/" ? location === "/" : location.startsWith(href);
@@ -100,10 +92,8 @@ export function BottomNav() {
               <Link
                 href={item.href}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium transition-colors",
-                  active
-                    ? "text-primary"
-                    : "text-gray-500 hover:text-gray-700"
+                  "flex flex-col items-center justify-center gap-0.5 py-2.5 text-[11px] font-semibold transition-colors active:opacity-60",
+                  active ? "text-primary" : "text-gray-500 hover:text-gray-700"
                 )}
               >
                 <span className={cn(active && "text-primary")}>{item.icon}</span>

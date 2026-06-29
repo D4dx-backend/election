@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { jsPDF } from "jspdf";
-import 'jspdf-autotable';
+import { autoTable } from "jspdf-autotable";
 import * as XLSX from 'xlsx';
 import {
   Select,
@@ -258,47 +258,39 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
       
       // Prepare data for table
       const tableColumn = ["Name", "Election"];
-      const tableRows = displayNominees.map((nominee: any, index: number) => {
+      const tableRows = displayNominees.map((nominee: any) => {
+        const nomineeElectionId =
+          nominee.electionId?._id?.toString() ||
+          nominee.electionId?.toString() ||
+          nominee.electionId;
         const election = elections.find((e: any) => {
           const electionId = e._id?.toString() || e.id?.toString();
-          const nomineeElectionId = nominee.electionId?._id?.toString() || 
-                                nominee.electionId?.toString() || 
-                                nominee.electionId;
           return electionId === nomineeElectionId;
         });
-        
+        const fallbackTitle =
+          selectedElectionId && selectedElectionId !== "all" ? title.replace(" Nominees", "") : null;
+
         return [
-          nominee.name || 'Unknown',
-          election ? election.title : 'Unknown Election'
+          String(nominee.name || "Unknown"),
+          String(election?.title || fallbackTitle || "Unknown Election"),
         ];
       });
-      
-      // Add table to PDF - wrap in try/catch to handle any autoTable errors
-      try {
-        (doc as any).autoTable({
-          startY: 40,
-          head: [tableColumn],
-          body: tableRows,
-          theme: 'grid',
-          headStyles: { fillColor: [41, 128, 185], textColor: 255 }
-        });
-        
-        // Save the PDF
-        doc.save(`${title.replace(/\s+/g, '_')}_${new Date().toLocaleDateString().replace(/\//g, '-')}.pdf`);
-        
-        toast({
-          title: "PDF Exported",
-          description: "Nominees list has been exported to PDF successfully",
-          variant: "success"
-        });
-      } catch (tableError) {
-        console.error('Error creating PDF table:', tableError);
-        toast({
-          title: "Export Failed",
-          description: "Failed to format PDF table",
-          variant: "destructive"
-        });
-      }
+
+      autoTable(doc, {
+        startY: 40,
+        head: [tableColumn],
+        body: tableRows,
+        theme: "grid",
+        headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+      });
+
+      doc.save(`${title.replace(/\s+/g, "_")}_${new Date().toLocaleDateString().replace(/\//g, "-")}.pdf`);
+
+      toast({
+        title: "PDF Exported",
+        description: "Nominees list has been exported to PDF successfully",
+        variant: "success",
+      });
     } catch (error) {
       console.error('Error exporting to PDF:', error);
       toast({

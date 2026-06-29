@@ -21,12 +21,14 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkVoterSlipPrinter } from "@/components/voters/BulkVoterSlipPrinter";
-import { AlertCircle, Users, PlusCircle, Trash2, Link2, Printer } from "lucide-react";
+import { ManageVoterGroupDialog } from "@/components/voters/ManageVoterGroupDialog";
+import { AlertCircle, Users, PlusCircle, Trash2, Link2, Printer, Settings2 } from "lucide-react";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Pagination } from "@/lib/types";
 
 interface LinkedElection {
-  _id: string;
+  _id?: string;
+  id?: string;
   title?: string;
   organization?: string;
 }
@@ -49,6 +51,7 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
   const [linkGroup, setLinkGroup] = useState<VoterGroup | null>(null);
   const [linkSelected, setLinkSelected] = useState<string[]>([]);
   const [printGroupId, setPrintGroupId] = useState<string | null>(null);
+  const [manageGroup, setManageGroup] = useState<VoterGroup | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
@@ -73,13 +76,25 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
   const pagination = data?.pagination;
 
   // Elections available to link groups to.
-  const { data: elections = [] } = useQuery<{ _id?: string; id?: string; title?: string; organization?: string }[]>({
+  const { data: electionsResponse } = useQuery<{ data?: LinkedElection[] } | LinkedElection[]>({
     queryKey: ["/api/elections"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/elections");
+      return res.json();
+    },
   });
+
+  const elections: LinkedElection[] = Array.isArray(electionsResponse)
+    ? electionsResponse
+    : Array.isArray(electionsResponse?.data)
+    ? electionsResponse.data
+    : [];
 
   const openLinkDialog = (group: VoterGroup) => {
     setLinkGroup(group);
-    setLinkSelected((group.elections || []).map((e) => e._id));
+    setLinkSelected(
+      (group.elections || []).map((e) => (e._id || e.id || "").toString()).filter(Boolean)
+    );
   };
 
   const linkMutation = useMutation({
@@ -267,6 +282,14 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => setManageGroup(g)}
+                  >
+                    <Settings2 className="h-4 w-4 mr-1" />
+                    Manage
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => openLinkDialog(g)}
                   >
                     <Link2 className="h-4 w-4 mr-1" />
@@ -354,6 +377,12 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
         voters={printVoters as any}
         elections={elections as any}
         title={printGroup?.name ? `Voter Group: ${printGroup.name}` : "Voter Group"}
+      />
+
+      <ManageVoterGroupDialog
+        group={manageGroup}
+        open={!!manageGroup}
+        onOpenChange={(o) => { if (!o) setManageGroup(null); }}
       />
 
       <ConfirmDialog

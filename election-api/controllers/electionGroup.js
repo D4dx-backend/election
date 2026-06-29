@@ -1,53 +1,60 @@
-const ElectionGroup = require("../model/ElectionGroup");
+const electionGroups = require("../lib/supabase/electionGroups");
 const { logUserActivity } = require("../utils/auditLog");
 
-// @desc      ADD ELECTION GROUP
-// @route     POST /api/v1/election-groups
-// @access    public
 exports.addElectionGroup = async (req, res) => {
   try {
-    const electionGroup = await ElectionGroup.create(req.body);
+    const body = { ...req.body };
+    const user = req.user || {};
+    if (!body.franchiseId && user.franchiseId) {
+      body.franchiseId = user.franchiseId;
+    }
+    if (!body.createdBy && user._id) {
+      body.createdBy = user._id;
+    }
+    const electionGroup = await electionGroups.create(body);
     await logUserActivity(req.user._id, req.ip, "Created", electionGroup.name, "Election Group");
-    res.status(201).json({ success: true, message: 'Election Group created.', electionGroup });
+    res.status(201).json({ success: true, message: "Election Group created.", electionGroup });
   } catch (err) {
     console.error(err);
-    errorLog(req, err);
     res.status(500).json({ success: false, message: err.toString() });
   }
 };
 
-// Implement other CRUD operations similarly...
-
 exports.getElectionGroupById = async (req, res) => {
   try {
-    const eg = await ElectionGroup.findById(req.params.id);
-    if (!eg) return res.status(404).json({ success: false, message: 'Election Group not found.' });
+    const eg = await electionGroups.findById(req.params.id);
+    if (!eg) return res.status(404).json({ success: false, message: "Election Group not found." });
     res.status(200).json({ success: true, data: eg });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
 };
 
 exports.updateElectionGroupById = async (req, res) => {
   try {
-    const eg = await ElectionGroup.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!eg) return res.status(404).json({ success: false, message: 'Election Group not found.' });
+    const eg = await electionGroups.updateById(req.params.id, req.body);
+    if (!eg) return res.status(404).json({ success: false, message: "Election Group not found." });
     res.status(200).json({ success: true, data: eg });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
 };
 
 exports.deleteElectionGroupById = async (req, res) => {
   try {
-    const eg = await ElectionGroup.findByIdAndDelete(req.params.id);
-    if (!eg) return res.status(404).json({ success: false, message: 'Election Group not found.' });
-    res.status(200).json({ success: true, message: 'Election Group deleted.' });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+    const eg = await electionGroups.deleteById(req.params.id);
+    if (!eg) return res.status(404).json({ success: false, message: "Election Group not found." });
+    res.status(200).json({ success: true, message: "Election Group deleted." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
 };
 
-// @desc      GET ALL ELECTION GROUPS
-// @route     GET /api/v1/electionGroup
-// @access    Protected
 exports.getElectionGroups = async (req, res) => {
   try {
-    // Scope by role so franchise admins only see their own groups
     const filter = {};
     const user = req.user || {};
     if (user.role === "franchise_admin") {
@@ -56,15 +63,10 @@ exports.getElectionGroups = async (req, res) => {
       filter.franchiseId = req.query.franchiseId;
     }
 
-    // Opt-in server-side pagination (only when ?page is provided)
     if (req.query.page !== undefined) {
       const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
       const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
-      const total = await ElectionGroup.countDocuments(filter);
-      const paged = await ElectionGroup.find(filter)
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit);
+      const { groups: paged, total } = await electionGroups.find(filter, { page, limit });
       const totalPages = Math.max(Math.ceil(total / limit), 1);
       return res.status(200).json({
         success: true,
@@ -74,23 +76,20 @@ exports.getElectionGroups = async (req, res) => {
       });
     }
 
-    const electionGroups = await ElectionGroup.find(filter);
-    res.status(200).json({ success: true, count: electionGroups.length, data: electionGroups });
+    const { groups: data } = await electionGroups.find(filter);
+    res.status(200).json({ success: true, count: data.length, data });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });
   }
 };
 
-// @desc      UPDATE ELECTION GROUP
-// @route     PUT /api/v1/electionGroup
-// @access    Protected
 exports.updateElectionGroup = async (req, res) => {
   try {
     const { id } = req.body;
-    const electionGroup = await ElectionGroup.findByIdAndUpdate(id, req.body, { new: true });
+    const electionGroup = await electionGroups.updateById(id, req.body);
     if (!electionGroup) {
-      return res.status(404).json({ success: false, message: 'Election Group not found.' });
+      return res.status(404).json({ success: false, message: "Election Group not found." });
     }
     res.status(200).json({ success: true, data: electionGroup });
   } catch (err) {
@@ -99,17 +98,14 @@ exports.updateElectionGroup = async (req, res) => {
   }
 };
 
-// @desc      DELETE ELECTION GROUP
-// @route     DELETE /api/v1/electionGroup
-// @access    Protected
 exports.deleteElectionGroup = async (req, res) => {
   try {
     const { id } = req.query;
-    const electionGroup = await ElectionGroup.findByIdAndDelete(id);
+    const electionGroup = await electionGroups.deleteById(id);
     if (!electionGroup) {
-      return res.status(404).json({ success: false, message: 'Election Group not found.' });
+      return res.status(404).json({ success: false, message: "Election Group not found." });
     }
-    res.status(200).json({ success: true, message: 'Election Group deleted.' });
+    res.status(200).json({ success: true, message: "Election Group deleted." });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });

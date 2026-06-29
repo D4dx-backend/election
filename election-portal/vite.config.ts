@@ -11,7 +11,12 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: "auto",
-      includeAssets: ["app-icon.png", "logo.png", "apple-touch-icon.png"],
+      includeAssets: [
+        "app-icon.png",
+        "logo.png",
+        "apple-touch-icon.png",
+        "offline.html",
+      ],
       manifest: {
         name: "Vote+ Election Management",
         short_name: "Vote+",
@@ -22,9 +27,18 @@ export default defineConfig({
         orientation: "portrait",
         start_url: "/",
         scope: "/",
+        categories: ["productivity", "utilities"],
         icons: [
-          { src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" },
-          { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png" },
+          {
+            src: "/pwa-192x192.png",
+            sizes: "192x192",
+            type: "image/png",
+          },
+          {
+            src: "/pwa-512x512.png",
+            sizes: "512x512",
+            type: "image/png",
+          },
           {
             src: "/maskable-512x512.png",
             sizes: "512x512",
@@ -32,6 +46,7 @@ export default defineConfig({
             purpose: "maskable",
           },
         ],
+        screenshots: [],
       },
       workbox: {
         // Precache only the static app shell. Data is never precached.
@@ -39,8 +54,9 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
-        // SPA fallback for navigations, but NEVER for API requests.
-        navigateFallback: "/index.html",
+        // When offline, show the dedicated offline page instead of a blank screen.
+        offlineGoogleAnalytics: false,
+        navigateFallback: "/offline.html",
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
@@ -49,6 +65,42 @@ export default defineConfig({
             urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
             handler: "NetworkOnly",
             method: "GET",
+          },
+          {
+            // Google Fonts stylesheets — stale-while-revalidate so fonts
+            // load instantly on repeat visits.
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "google-fonts-stylesheets",
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
+          {
+            // Google Fonts actual font files — cache-first (immutable).
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts-webfonts",
+              expiration: {
+                maxEntries: 20,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // Static images from our own origin — cache-first with 30-day TTL.
+            urlPattern: ({ url, sameOrigin }) =>
+              sameOrigin && /\.(png|jpg|jpeg|svg|gif|webp|ico)$/.test(url.pathname),
+            handler: "CacheFirst",
+            options: {
+              cacheName: "images",
+              expiration: {
+                maxEntries: 60,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+            },
           },
         ],
       },

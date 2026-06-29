@@ -10,10 +10,11 @@ import {
   DialogDescription
 } from "@/components/ui/dialog";
 import { User, Election } from "@/lib/types";
+
+type VoterForSlip = User & { plainPassword?: string; _id?: string };
 import { useToast } from "@/hooks/use-toast";
 import { Printer, FileDown } from "lucide-react";
 import jsPDF from "jspdf";
-import 'jspdf-autotable';
 
 // Load the Vote+ logo once and cache it for PDF embedding/watermarking.
 let cachedLogo: HTMLImageElement | null = null;
@@ -30,7 +31,7 @@ const loadLogo = (): Promise<HTMLImageElement | null> =>
   });
 
 interface BulkVoterSlipPrinterProps {
-  voters: User[];
+  voters: VoterForSlip[];
   elections: Election[];
   selectedElectionId?: string;
   label?: string;
@@ -217,31 +218,48 @@ export function BulkVoterSlipPrinter({
         doc.setFontSize(8);
         doc.text(`#${voter.sequenceNumber || index + 1}`, x + slipWidth - 10, y + 7);
         
-        // Voter details
+        // Voter details — dynamic Y so elections always appear before the footer
+        const displayPwd = voter.plainPassword || voter.username?.toLowerCase() || "N/A";
+        let lineY = y + 18;
+        const lineGap = 6;
+
         doc.setFontSize(10);
-        doc.text(`Username: ${voter.username}`, x + 5, y + 20);
-        doc.text(`Password: ${voter.username?.toLowerCase() || 'N/A'}`, x + 5, y + 27);
-        doc.text(`Status: ${voter.status || 'Active'}`, x + 5, y + 34);
-        
-        // Elections list
-        doc.text('Elections:', x + 5, y + 41);
+        doc.text(`Username: ${voter.username}`, x + 5, lineY);
+        lineY += lineGap;
+        doc.text(`Password: ${displayPwd}`, x + 5, lineY);
+        lineY += lineGap;
+        doc.text(`Status: ${voter.status || 'Active'}`, x + 5, lineY);
+        lineY += lineGap;
+
+        doc.setFontSize(10);
+        doc.text('Elections:', x + 5, lineY);
+        lineY += 5;
+
+        doc.setFontSize(8);
         if (electionNames.length > 0) {
-          electionNames.forEach((name, idx) => {
-            if (idx < 2) { // Limit to 2 elections per slip to prevent overflow
-              doc.setFontSize(8);
-              doc.text(`• ${name}`, x + 10, y + 48 + (idx * 6));
-            } else if (idx === 2) {
-              doc.text(`• ... and ${electionNames.length - 2} more`, x + 10, y + 48 + (idx * 6));
-            }
+          const maxShown = 2;
+          electionNames.slice(0, maxShown).forEach((name) => {
+            doc.text(`• ${name}`, x + 10, lineY);
+            lineY += 5;
           });
+          if (electionNames.length > maxShown) {
+            doc.text(`• ... and ${electionNames.length - maxShown} more`, x + 10, lineY);
+            lineY += 5;
+          }
         } else {
-          doc.setFontSize(8);
-          doc.text('No elections assigned', x + 10, y + 48);
+          doc.text('No elections assigned', x + 10, lineY);
+          lineY += 5;
         }
-        
-        // Footer
+
+        // Footer always below election list (never overlapping bullets)
+        const footerY = lineY + 3;
         doc.setFontSize(6);
-        doc.text('Please keep these credentials confidential.', x + slipWidth / 2, y + slipHeight - 5, { align: 'center' });
+        doc.text(
+          'Please keep these credentials confidential.',
+          x + slipWidth / 2,
+          footerY,
+          { align: 'center' }
+        );
         
         votersProcessed++;
       });

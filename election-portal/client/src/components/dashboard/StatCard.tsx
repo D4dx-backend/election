@@ -25,30 +25,43 @@ export function StatCard({
 }: StatCardProps) {
   return (
     <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30">
-      <CardContent className="p-3 sm:p-4 md:p-6">
-        <div className="flex min-h-20 flex-col items-start gap-2 md:min-h-0 md:flex-row md:items-center md:gap-0">
-          <div className={cn("flex-shrink-0 rounded-md p-2 md:p-3", iconBgColor)}>
-            <div className={iconColor}>{icon}</div>
+      {/* ── Mobile layout: compact vertical stack ── */}
+      <CardContent className="p-3 md:hidden">
+        <div className={cn("inline-flex rounded-lg p-2 mb-2", iconBgColor)}>
+          <div className={cn("h-4 w-4", iconColor)}>{icon}</div>
+        </div>
+        <p className="text-xl font-bold text-gray-900 leading-none mb-1">{value}</p>
+        <p className="text-[11px] font-medium text-gray-500 leading-tight line-clamp-2">{title}</p>
+        {trend && (
+          <p className={cn(
+            "text-[10px] mt-1 font-medium",
+            trend.direction === 'up' ? "text-green-500" :
+            trend.direction === 'down' ? "text-red-500" : "text-gray-400"
+          )}>
+            {trend.value}
+          </p>
+        )}
+      </CardContent>
+
+      {/* ── Desktop layout: horizontal ── */}
+      <CardContent className="hidden md:block p-6">
+        <div className="flex items-center gap-4">
+          <div className={cn("flex-shrink-0 rounded-lg p-3", iconBgColor)}>
+            <div className={cn("h-5 w-5", iconColor)}>{icon}</div>
           </div>
-          <div className="min-w-0 md:ml-5">
-            <p className="text-[11px] font-medium leading-tight text-gray-500 sm:text-xs md:text-sm">{title}</p>
-            <div className="flex min-w-0 items-baseline md:items-center">
-              <p className="text-lg font-semibold leading-none text-gray-900 md:text-xl">{value}</p>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-gray-500">{title}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-2xl font-bold text-gray-900">{value}</p>
               {trend && (
                 <>
-                  {trend.direction === 'up' && (
-                    <TrendingUp className="ml-1 hidden h-4 w-4 text-green-500 sm:block md:ml-2" />
-                  )}
-                  {trend.direction === 'down' && (
-                    <TrendingDown className="ml-1 hidden h-4 w-4 text-red-500 sm:block md:ml-2" />
-                  )}
-                  <span 
-                    className={cn(
-                      "ml-1 hidden truncate text-xs sm:inline md:text-sm",
-                      trend.direction === 'up' ? "text-green-500" : 
-                      trend.direction === 'down' ? "text-red-500" : "text-gray-500"
-                    )}
-                  >
+                  {trend.direction === 'up' && <TrendingUp className="h-4 w-4 text-green-500" />}
+                  {trend.direction === 'down' && <TrendingDown className="h-4 w-4 text-red-500" />}
+                  <span className={cn(
+                    "text-sm truncate",
+                    trend.direction === 'up' ? "text-green-500" :
+                    trend.direction === 'down' ? "text-red-500" : "text-gray-500"
+                  )}>
                     {trend.value}
                   </span>
                 </>

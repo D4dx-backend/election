@@ -3,49 +3,39 @@ import { useParams, useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import VoterLayout from '@/components/layouts/VoterLayout';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { 
-  AlertCircle, 
-  CheckCircle, 
-  Calendar, 
-  Users, 
+import {
+  AlertCircle,
+  CheckCircle2,
+  Calendar,
   ArrowLeft,
   Info,
-  FileCheck
+  Trophy,
+  Users,
+  FileCheck,
 } from 'lucide-react';
 
 export default function VotingResults() {
   const { electionId } = useParams();
   const [, navigate] = useLocation();
 
-  // Get election details
-  const { 
-    data: electionData, 
-    isLoading: isLoadingElection,
-    isError: isElectionError 
-  } = useQuery({
+  const { data: electionData, isLoading: isLoadingElection, isError: isElectionError } = useQuery({
     queryKey: ['/api/elections', electionId, 'single'],
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/elections/${electionId}`);
-      return await res.json();
+      return res.json();
     },
     enabled: !!electionId,
     retry: false,
   });
 
-  // Get user's vote for this election (404 = not voted yet, handled gracefully)
-  const { 
-    data: voteData, 
-    isLoading: isLoadingVote,
-  } = useQuery({
+  const { data: voteData, isLoading: isLoadingVote } = useQuery({
     queryKey: ['/api/vote/my-vote', electionId, 'single'],
     queryFn: async () => {
       try {
         const res = await apiRequest('GET', `/api/vote/my-vote/${electionId}`);
-        return await res.json();
+        return res.json();
       } catch {
         return { success: false };
       }
@@ -54,13 +44,12 @@ export default function VotingResults() {
     retry: false,
   });
 
-  // Published results tally (returns 403 until an admin publishes — handled gracefully).
   const { data: publishedResp } = useQuery({
     queryKey: ['/api/vote/results', electionId, 'published'],
     queryFn: async () => {
       try {
         const res = await apiRequest('GET', `/api/vote/results/${electionId}`);
-        return await res.json();
+        return res.json();
       } catch {
         return null;
       }
@@ -70,139 +59,70 @@ export default function VotingResults() {
   });
   const publishedResults = publishedResp?.data || null;
 
-  // Redirect if user hasn't voted yet
   useEffect(() => {
     const token = localStorage.getItem('authToken');
-    if (!token) {
-      navigate('/login');
-      return;
-    }
-
+    if (!token) { navigate('/login'); return; }
     if (voteData && !voteData.success && voteData.message === 'No vote found for this election') {
       navigate(`/election/${electionId}`);
     }
   }, [voteData, electionId, navigate]);
 
-  // Format date for display
-  const formatDate = (dateString: string) => {
-    const options: Intl.DateTimeFormatOptions = { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    };
-    return new Date(dateString).toLocaleDateString(undefined, options);
-  };
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+    });
 
-  // Format timestamp for display
-  const formatTimestamp = (dateString: string) => {
-    const options: Intl.DateTimeFormatOptions = { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    };
-    return new Date(dateString).toLocaleDateString(undefined, options);
-  };
+  const formatTimestamp = (dateString: string) =>
+    new Date(dateString).toLocaleDateString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
 
-  // Loading state
+  // ── Loading ──
   if (isLoadingElection || isLoadingVote) {
     return (
-      <VoterLayout title="Loading Results...">
-        <div className="container mx-auto p-6">
-          <div className="flex items-center mb-6">
-            <Button variant="outline" size="sm" onClick={() => navigate('/')}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Elections
-            </Button>
-          </div>
-
-          <Card className="mb-6">
-            <CardHeader>
-              <Skeleton className="h-8 w-3/4 mb-2" />
-              <Skeleton className="h-5 w-1/2" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-5 w-full mb-3" />
-              <Skeleton className="h-5 w-3/4 mb-3" />
-              <Skeleton className="h-5 w-1/2" />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <Skeleton className="h-6 w-3/4 mb-2" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-5 w-full mb-3" />
-              <Skeleton className="h-5 w-full mb-3" />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                {[1, 2, 3].map((i) => (
-                  <Card key={i}>
-                    <CardHeader>
-                      <Skeleton className="h-5 w-3/4" />
-                    </CardHeader>
-                    <CardContent>
-                      <Skeleton className="h-4 w-1/2" />
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+      <VoterLayout title="Loading Results…" showBack onBack={() => navigate('/voting')}>
+        <div className="px-4 pt-4 max-w-lg mx-auto space-y-4">
+          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-20 w-full rounded-2xl" />
+          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}
         </div>
       </VoterLayout>
     );
   }
 
-  // Error handling
+  // ── Error ──
   if (isElectionError) {
     return (
-      <VoterLayout title="Error">
-        <div className="container mx-auto p-6">
-          <Button variant="outline" size="sm" onClick={() => navigate('/voting')} className="mb-4">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Elections
-          </Button>
-          
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>
-              There was an error loading your vote information. Please try again later.
-            </AlertDescription>
-          </Alert>
+      <VoterLayout title="Error" showBack onBack={() => navigate('/voting')}>
+        <div className="px-4 pt-4 max-w-lg mx-auto">
+          <div className="flex items-start gap-3 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800">
+            <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-sm">Error loading results</p>
+              <p className="text-xs mt-0.5 text-red-600">Please try again later.</p>
+            </div>
+          </div>
         </div>
       </VoterLayout>
     );
   }
 
-  // If user hasn't voted
+  // ── No vote found ──
   if (!voteData?.success) {
     return (
-      <VoterLayout title="No Vote Found">
-        <div className="container mx-auto p-6">
-          <Button variant="outline" size="sm" onClick={() => navigate('/voting')} className="mb-4">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Elections
-          </Button>
-          
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertTitle>No Vote Found</AlertTitle>
-            <AlertDescription>
-              You haven't voted in this election yet. Please go to the voting page to cast your vote.
-            </AlertDescription>
-          </Alert>
-          
-          <div className="mt-4">
-            <Button onClick={() => navigate(`/election/${electionId}`)}>
-              Go to Voting Page
-            </Button>
+      <VoterLayout title="No Vote Found" showBack onBack={() => navigate('/voting')}>
+        <div className="px-4 pt-4 max-w-lg mx-auto">
+          <div className="flex items-start gap-3 p-4 rounded-2xl bg-blue-50 border border-blue-200 text-blue-800 mb-4">
+            <Info className="h-5 w-5 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-sm">No vote recorded</p>
+              <p className="text-xs mt-0.5 text-blue-600">You haven't voted in this election yet.</p>
+            </div>
           </div>
+          <Button className="w-full h-12 rounded-xl" onClick={() => navigate(`/election/${electionId}`)}>
+            Go to Voting Page
+          </Button>
         </div>
       </VoterLayout>
     );
@@ -213,145 +133,126 @@ export default function VotingResults() {
   const nominees = vote?.nominees || [];
 
   return (
-    <VoterLayout title="Vote Results">
-      <div className="container mx-auto p-4">
-        {/* Back button */}
-        <Button variant="outline" size="sm" onClick={() => navigate('/voting')} className="mb-4">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
-        </Button>
-        
-        {/* Election Info */}
-        <Card className="w-full mb-4 border-l-4 border-l-blue-500">
-          <div className="p-4">
-            <h1 className="text-xl font-bold mb-1">{election?.title}</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{election?.organization}</p>
-            
-            <div className="flex flex-wrap gap-y-2 text-sm">
-              <div className="flex items-center mr-4">
-                <Calendar className="h-4 w-4 mr-1 text-muted-foreground" />
-                <span className="text-muted-foreground">
-                  {formatDate(election?.electionDate)}
-                </span>
-              </div>
+    <VoterLayout title="My Vote" showBack onBack={() => navigate('/voting')}>
+      <div className="px-4 pt-4 pb-4 max-w-lg mx-auto">
+
+        {/* ── Election info card ── */}
+        <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 mb-4">
+          <h1 className="font-bold text-lg text-gray-900 dark:text-white leading-snug">{election?.title}</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{election?.organization}</p>
+          {election?.electionDate && (
+            <div className="flex items-center gap-1.5 mt-2 text-xs text-gray-400">
+              <Calendar className="h-3.5 w-3.5" />
+              {formatDate(election.electionDate)}
             </div>
+          )}
+        </div>
+
+        {/* ── Vote confirmed banner ── */}
+        <div className="rounded-2xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4 mb-5">
+          <div className="flex items-center gap-2 mb-1.5">
+            <FileCheck className="h-5 w-5 text-green-600 dark:text-green-400" />
+            <h2 className="font-bold text-green-700 dark:text-green-300">Vote Confirmed</h2>
           </div>
-        </Card>
-        
-        {/* Vote Confirmation */}
-        <Card className="w-full mb-4 border-green-500 bg-green-50 dark:bg-green-900/20">
-          <div className="p-4">
-            <div className="flex items-center mb-2">
-              <FileCheck className="h-5 w-5 text-green-600 mr-2" />
-              <h2 className="text-lg font-bold text-green-600">Vote Confirmed</h2>
-            </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Submitted on {formatTimestamp(vote?.timestamp)}
+          <p className="text-xs text-green-600 dark:text-green-400 mb-3">
+            Submitted on {formatTimestamp(vote?.timestamp)}
+          </p>
+          <div className="flex items-start gap-2 bg-white/60 dark:bg-gray-800/60 rounded-xl p-3">
+            <Info className="h-4 w-4 text-gray-500 dark:text-gray-400 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              Your vote is confidential. Only you can see the nominees you selected.
             </p>
-            
-            <Alert className="mb-4">
-              <Info className="h-4 w-4" />
-              <AlertTitle>Vote Privacy</AlertTitle>
-              <AlertDescription className="text-sm">
-                Your vote is confidential. Only you can see the nominees you selected.
-              </AlertDescription>
-            </Alert>
-          </div>
-        </Card>
-        
-        {/* Nominees Selected */}
-        <div className="mb-4">
-          <h3 className="text-lg font-bold mb-3">You voted for:</h3>
-          <div className="space-y-3">
-            {nominees.map((nominee: any) => (
-              <Card key={nominee._id} className="w-full border-l-4 border-l-green-500">
-                <div className="p-4">
-                  <div className="flex items-center mb-2">
-                    <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                    <h4 className="font-bold">{nominee.name}</h4>
-                  </div>
-                  
-                  {nominee.bio && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                      {nominee.bio}
-                    </p>
-                  )}
-                </div>
-              </Card>
-            ))}
           </div>
         </div>
-        
-        {/* Published Results */}
+
+        {/* ── Who you voted for ── */}
+        <h3 className="font-bold text-base text-gray-800 dark:text-white mb-3">
+          You voted for:
+        </h3>
+        <div className="space-y-3 mb-6">
+          {nominees.map((nominee: any) => (
+            <div
+              key={nominee._id}
+              className="flex items-center gap-3 bg-white dark:bg-gray-800 border-2 border-green-200 dark:border-green-800 rounded-2xl p-4"
+            >
+              <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center flex-shrink-0 text-lg font-bold text-green-700 dark:text-green-300">
+                {nominee.name?.charAt(0).toUpperCase() || '?'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-900 dark:text-white">{nominee.name}</p>
+                {nominee.bio && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{nominee.bio}</p>
+                )}
+              </div>
+              <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
+            </div>
+          ))}
+        </div>
+
+        {/* ── Published results ── */}
         {publishedResults && Array.isArray(publishedResults.nominees) && (() => {
           const mode = publishedResults.election?.voterResultDisplay || 'full';
           const showScore = mode === 'score' || mode === 'full';
           const showPercentage = mode === 'percentage' || mode === 'full';
           return (
-          <div className="mb-4">
-            <div className="flex items-center mb-3">
-              <h3 className="text-lg font-bold">Election Result</h3>
-              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                Published
-              </span>
-            </div>
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Trophy className="h-5 w-5 text-amber-500" />
+                <h3 className="font-bold text-base text-gray-800 dark:text-white">Election Results</h3>
+                <span className="text-[10px] font-bold text-green-700 bg-green-100 dark:bg-green-900/40 dark:text-green-300 px-2 py-0.5 rounded-full">
+                  Published
+                </span>
+              </div>
 
-            <div className={`grid ${showScore ? 'grid-cols-3' : 'grid-cols-2'} gap-2 mb-3`}>
-              {showScore && (
-                <Card className="text-center">
-                  <div className="p-3">
-                    <p className="text-lg font-bold">{publishedResults.totalBallots ?? 0}</p>
-                    <p className="text-[11px] text-muted-foreground">Votes Cast</p>
+              {/* Stats row */}
+              <div className={`grid ${showScore ? 'grid-cols-3' : 'grid-cols-2'} gap-2 mb-3`}>
+                {showScore && (
+                  <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 text-center">
+                    <p className="text-xl font-bold text-gray-900 dark:text-white">{publishedResults.totalBallots ?? 0}</p>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">Votes Cast</p>
                   </div>
-                </Card>
-              )}
-              <Card className="text-center">
-                <div className="p-3">
-                  <p className="text-lg font-bold">{publishedResults.eligibleVoters ?? 0}</p>
-                  <p className="text-[11px] text-muted-foreground">Eligible</p>
+                )}
+                <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 text-center">
+                  <p className="text-xl font-bold text-gray-900 dark:text-white">{publishedResults.eligibleVoters ?? 0}</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">Eligible</p>
                 </div>
-              </Card>
-              <Card className="text-center">
-                <div className="p-3">
-                  <p className="text-lg font-bold">{publishedResults.turnout ?? 0}%</p>
-                  <p className="text-[11px] text-muted-foreground">Turnout</p>
+                <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 text-center">
+                  <p className="text-xl font-bold text-gray-900 dark:text-white">{publishedResults.turnout ?? 0}%</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">Turnout</p>
                 </div>
-              </Card>
-            </div>
+              </div>
 
-            <Card className="w-full">
-              <div className="p-2">
+              {/* Rankings */}
+              <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 overflow-hidden">
                 {[...publishedResults.nominees]
-                  .sort((a: any, b: any) => ((b.voteCount ?? b.percentage ?? 0) - (a.voteCount ?? a.percentage ?? 0)))
+                  .sort((a: any, b: any) => (b.voteCount ?? b.percentage ?? 0) - (a.voteCount ?? a.percentage ?? 0))
                   .map((n: any, idx: number) => {
-                    // Prefer the server-computed winner flag (honours gender
-                    // quota); fall back to rank only if it's absent.
                     const elected = typeof n.isElected === 'boolean'
                       ? n.isElected
                       : idx < (publishedResults.election?.numberToBeElected || 1);
                     return (
                       <div
                         key={n._id || n.id || idx}
-                        className={`flex items-center justify-between px-3 py-2 rounded-md ${
-                          elected ? 'bg-green-50 dark:bg-green-900/20' : ''
-                        }`}
+                        className={`flex items-center gap-3 px-4 py-3 ${idx !== 0 ? 'border-t border-gray-100 dark:border-gray-700' : ''} ${elected ? 'bg-green-50 dark:bg-green-900/10' : ''}`}
                       >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-xs text-muted-foreground w-5 text-center">{idx + 1}</span>
-                          <span className="font-medium truncate">{n.name}</span>
+                        <span className="text-sm font-bold text-gray-400 w-5 text-center flex-shrink-0">{idx + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className={`font-semibold text-sm truncate ${elected ? 'text-green-700 dark:text-green-300' : 'text-gray-900 dark:text-white'}`}>
+                            {n.name}
+                          </p>
                           {elected && (
-                            <span className="inline-flex items-center text-[10px] font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">
-                              Elected
-                            </span>
+                            <span className="text-[10px] font-bold text-green-700 dark:text-green-400">✓ Elected</span>
                           )}
                         </div>
                         {(showScore || showPercentage) && (
-                          <div className="text-right shrink-0">
-                            {showScore && <span className="font-bold">{n.voteCount ?? 0}</span>}
+                          <div className="text-right flex-shrink-0">
+                            {showScore && (
+                              <p className="font-bold text-sm text-gray-900 dark:text-white">{n.voteCount ?? 0}</p>
+                            )}
                             {showPercentage && (
-                              <span className={`text-xs text-muted-foreground ${showScore ? 'ml-1' : ''}`}>
-                                {showScore ? '(' : ''}{(n.percentage ?? 0).toFixed(1)}%{showScore ? ')' : ''}
-                              </span>
+                              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                {(n.percentage ?? 0).toFixed(1)}%
+                              </p>
                             )}
                           </div>
                         )}
@@ -359,27 +260,20 @@ export default function VotingResults() {
                     );
                   })}
               </div>
-            </Card>
-          </div>
+            </div>
           );
         })()}
-        
-        {/* Thank You Message */}
-        <Card className="w-full mb-6 border-blue-200 bg-blue-50 dark:bg-blue-900/10">
-          <div className="p-6 text-center">
-            <h2 className="text-xl font-bold mb-2">Thank You For Voting</h2>
-            <p className="text-gray-600 dark:text-gray-400">
-              Your participation in this election is important and valued.
-            </p>
-          </div>
-        </Card>
-        
-        {/* Return to Elections */}
-        <Button 
-          onClick={() => navigate('/')} 
-          className="w-full h-12"
-          variant="outline"
-        >
+
+        {/* ── Thank you ── */}
+        <div className="rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 p-6 text-center mb-4">
+          <p className="text-2xl mb-2">🗳️</p>
+          <h2 className="font-bold text-lg text-gray-900 dark:text-white mb-1">Thank You For Voting</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Your participation in this election is important and valued.
+          </p>
+        </div>
+
+        <Button onClick={() => navigate('/voting')} className="w-full h-12 rounded-xl" variant="outline">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Return to All Elections
         </Button>

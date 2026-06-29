@@ -1,0 +1,416 @@
+const { getSupabase } = require("../../config/supabase");
+const { mapUser, userToRow } = require("./map");
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(id) {
+  return id && UUID_RE.test(String(id));
+}
+
+async function getElectionAccessForUsers(userIds) {
+  const map = new Map();
+  if (!userIds.length) return map;
+  userIds.forEach((id) => map.set(String(id), []));
+
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("user_election_access")
+    .select("user_id, election_id")
+    .in("user_id", userIds);
+
+  if (error) throw error;
+  (data || []).forEach((row) => {
+    const key = String(row.user_id);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(row.election_id);
+  });
+  return map;
+}
+
+async function attachElectionAccess(users) {
+  if (!users.length) return users;
+  const ids = users.map((u) => u.id || u._id);
+  const accessMap = await getElectionAccessForUsers(ids);
+  return users.map((u) => {
+    const id = String(u.id || u._id);
+    return { ...u, electionAccess: accessMap.get(id) || [] };
+  });
+}
+
+function stripPassword(user) {
+  if (!user) return user;
+  const { password, ...rest } = user;
+  return rest;
+}
+
+async function findById(id, { includePassword = true } = {}) {
+  if (!isUuid(id)) return null;
+  const supabase = getSupabase();
+  const { data, error } = await supabase.from("users").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const accessMap = await getElectionAccessForUsers([id]);
+  const user = mapUser(data, { electionAccess: accessMap.get(String(id)) || [] });
+  return includePassword ? user : stripPassword(user);
+}
+
+async function findByUsername(username) {
+  const normalized = String(username || "").trim();
+  if (!normalized) return null;
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .ilike("username", normalized)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const accessMap = await getElectionAccessForUsers([data.id]);
+  return mapUser(data, { electionAccess: accessMap.get(String(data.id)) || [] });
+}
+
+async function findByEmail(email) {
+  const normalized = String(email || "").trim();
+  if (!normalized) return null;
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .ilike("email", normalized)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const accessMap = await getElectionAccessForUsers([data.id]);
+  return mapUser(data, { electionAccess: accessMap.get(String(data.id)) || [] });
+}
+
+async function findOne({ username }) {
+  if (username) return findByUsername(username);
+  return null;
+}
+
+async function findAll(filter = {}) {
+  const supabase = getSupabase();
+  let query = supabase.from("users").select("*");
+
+  if (filter.role) query = query.eq("role", filter.role);
+  if (filter.franchiseId) query = query.eq("franchise_id", filter.franchiseId);
+  if (filter.isVoter !== undefined) query = query.eq("is_voter", filter.isVoter);
+  if (filter.status) query = query.eq("status", filter.status);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  const users = (data || []).map((row) => mapUser(row));
+  return attachElectionAccess(users);
+}
+
+async function countDocuments(filter = {}) {
+  const supabase = getSupabase();
+  let query = supabase.from("users").select("id", { count: "exact", head: true });
+
+  if (filter.role) query = query.eq("role", filter.role);
+  if (filter.franchiseId) query = query.eq("franchise_id", filter.franchiseId);
+  if (filter.isVoter !== undefined) query = query.eq("is_voter", filter.isVoter);
+  if (filter.status) query = query.eq("status", filter.status);
+  if (filter.electionId) {
+    const ids = await getUserIdsWithElectionAccess(filter.electionId);
+    if (ids.length === 0) return 0;
+    query = query.in("id", ids);
+  }
+
+  const { count, error } = await query;
+  if (error) throw error;
+  return count || 0;
+}
+
+async function getUserIdsWithElectionAccess(electionId) {
+  const supabase = getSupabase();
+  const ids = new Set();
+
+  const { data: direct, error: dErr } = await supabase
+    .from("user_election_access")
+    .select("user_id")
+    .eq("election_id", electionId);
+  if (dErr) throw dErr;
+  (direct || []).forEach((r) => ids.add(r.user_id));
+
+  const { data: groupLinks, error: gErr } = await supabase
+    .from("voter_group_elections")
+    .select("voter_group_id")
+    .eq("election_id", electionId);
+  if (gErr) throw gErr;
+
+  const groupIds = (groupLinks || []).map((r) => r.voter_group_id);
+  if (groupIds.length) {
+    const { data: groupVoters, error: gvErr } = await supabase
+      .from("voter_group_voters")
+      .select("user_id")
+      .in("voter_group_id", groupIds);
+    if (gvErr) throw gvErr;
+    (groupVoters || []).forEach((r) => ids.add(r.user_id));
+  }
+
+  return Array.from(ids);
+}
+
+async function getAssignedVoterIdsForElection(electionId) {
+  return getUserIdsWithElectionAccess(electionId);
+}
+
+async function setElectionAccess(userId, electionIds) {
+  const supabase = getSupabase();
+  const ids = [...new Set((electionIds || []).map(String))].filter(isUuid);
+  if (!ids.length) return;
+
+  const rows = ids.map((electionId) => ({ user_id: userId, election_id: electionId }));
+  const { error } = await supabase.from("user_election_access").upsert(rows, {
+    onConflict: "user_id,election_id",
+    ignoreDuplicates: true,
+  });
+  if (error) throw error;
+}
+
+async function addElectionAccessToUsers(userIds, electionIds) {
+  const supabase = getSupabase();
+  const uIds = [...new Set((userIds || []).map(String))].filter(isUuid);
+  const eIds = [...new Set((electionIds || []).map(String))].filter(isUuid);
+  if (!uIds.length || !eIds.length) return { modifiedCount: 0 };
+
+  const rows = [];
+  uIds.forEach((userId) => {
+    eIds.forEach((electionId) => rows.push({ user_id: userId, election_id: electionId }));
+  });
+
+  const { data: existing, error: exErr } = await supabase
+    .from("user_election_access")
+    .select("user_id, election_id")
+    .in("user_id", uIds)
+    .in("election_id", eIds);
+  if (exErr) throw exErr;
+
+  const existingSet = new Set(
+    (existing || []).map((r) => `${r.user_id}:${r.election_id}`)
+  );
+  const newRows = rows.filter((r) => !existingSet.has(`${r.user_id}:${r.election_id}`));
+  if (!newRows.length) return { modifiedCount: 0 };
+
+  const { error } = await supabase.from("user_election_access").insert(newRows);
+  if (error) throw error;
+  return { modifiedCount: newRows.length };
+}
+
+async function create(data) {
+  const supabase = getSupabase();
+  const { electionAccess, plainPassword, voterMetadata, ...rest } = data;
+  if (rest.username) rest.username = String(rest.username).trim();
+  if (rest.email) rest.email = String(rest.email).trim();
+  const row = userToRow(rest);
+  if (voterMetadata) {
+    if (voterMetadata.prefix !== undefined) row.voter_prefix = voterMetadata.prefix;
+    if (voterMetadata.sequenceNumber !== undefined) {
+      row.voter_sequence_number = voterMetadata.sequenceNumber;
+    }
+  }
+  row.created_at = new Date().toISOString();
+  row.updated_at = row.created_at;
+
+  const { data: created, error } = await supabase.from("users").insert(row).select().single();
+  if (error) {
+    if (error.code === "23505") {
+      const dup = new Error("Username or email already exists.");
+      dup.statusCode = 409;
+      throw dup;
+    }
+    throw error;
+  }
+
+  const access = Array.isArray(electionAccess) ? electionAccess : [];
+  if (access.length) await setElectionAccess(created.id, access);
+
+  const user = mapUser(created, { electionAccess: access, plainPassword });
+  return user;
+}
+
+async function insertMany(docs) {
+  const created = [];
+  for (const doc of docs) {
+    const { electionAccess, voterGroupId, plainPassword, voterMetadata, ...rest } = doc;
+    const user = await create({
+      ...rest,
+      electionAccess,
+      voterMetadata,
+      plainPassword,
+    });
+    created.push(user);
+  }
+  return created;
+}
+
+async function updateById(id, data) {
+  if (!isUuid(id)) return null;
+  const supabase = getSupabase();
+  const { electionAccess, plainPassword, voterMetadata, ...rest } = data;
+  const row = userToRow(rest);
+  if (voterMetadata) {
+    if (voterMetadata.prefix !== undefined) row.voter_prefix = voterMetadata.prefix;
+    if (voterMetadata.sequenceNumber !== undefined) {
+      row.voter_sequence_number = voterMetadata.sequenceNumber;
+    }
+  }
+
+  const { data: updated, error } = await supabase
+    .from("users")
+    .update(row)
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  if (!updated) return null;
+
+  if (electionAccess !== undefined) {
+    await supabase.from("user_election_access").delete().eq("user_id", id);
+    if (Array.isArray(electionAccess) && electionAccess.length) {
+      await setElectionAccess(id, electionAccess);
+    }
+  }
+
+  const accessMap = await getElectionAccessForUsers([id]);
+  return mapUser(updated, { electionAccess: accessMap.get(String(id)) || [] });
+}
+
+async function deleteById(id) {
+  if (!isUuid(id)) return null;
+  const user = await findById(id);
+  if (!user) return null;
+
+  const supabase = getSupabase();
+  await supabase.from("user_election_access").delete().eq("user_id", id);
+  const { error } = await supabase.from("users").delete().eq("id", id);
+  if (error) throw error;
+  return user;
+}
+
+async function findByUsernames(usernames) {
+  const normalized = usernames.map((u) => String(u).trim()).filter(Boolean);
+  if (!normalized.length) return [];
+  const supabase = getSupabase();
+  const orFilter = normalized.map((u) => `username.ilike.${u}`).join(",");
+  const { data, error } = await supabase.from("users").select("username").or(orFilter);
+  if (error) throw error;
+  return (data || []).map((r) => mapUser(r));
+}
+
+async function getAllVoters({
+  page = 1,
+  pageSize = 10,
+  status,
+  search,
+  electionId,
+  notInElection,
+  notInGroup,
+  forElectionId,
+  franchiseId,
+}) {
+  const supabase = getSupabase();
+  let query = supabase.from("users").select("*", { count: "exact" }).eq("is_voter", true);
+
+  if (status) query = query.eq("status", status);
+  if (franchiseId) query = query.eq("franchise_id", franchiseId);
+
+  if (search && search.trim()) {
+    const term = `%${search.trim()}%`;
+    query = query.or(`username.ilike.${term},full_name.ilike.${term}`);
+  }
+
+  if (electionId && electionId !== "all") {
+    const ids = await getUserIdsWithElectionAccess(electionId);
+    if (ids.length === 0) {
+      return { voters: [], total: 0 };
+    }
+    query = query.in("id", ids);
+  }
+
+  let assignedSet = null;
+  if (forElectionId && isUuid(forElectionId)) {
+    const assigned = await getAssignedVoterIdsForElection(forElectionId);
+    assignedSet = new Set(assigned.map(String));
+  }
+
+  if (notInElection && notInElection !== "all" && !forElectionId) {
+    if (!isUuid(notInElection)) {
+      const err = new Error("Invalid notInElection id.");
+      err.statusCode = 400;
+      throw err;
+    }
+    const assignedIds = await getAssignedVoterIdsForElection(notInElection);
+    if (assignedIds.length) {
+      // PostgREST expects: id=not.in.(uuid1,uuid2)
+      query = query.not("id", "in", `(${assignedIds.join(",")})`);
+    }
+  }
+
+  if (notInGroup && isUuid(notInGroup)) {
+    const { data: groupVoters, error } = await supabase
+      .from("voter_group_voters")
+      .select("user_id")
+      .eq("voter_group_id", notInGroup);
+    if (error) throw error;
+    const excludeIds = (groupVoters || []).map((r) => r.user_id);
+    if (excludeIds.length) {
+      query = query.not("id", "in", `(${excludeIds.join(",")})`);
+    }
+  }
+
+  query = query.order("created_at", { ascending: false });
+  const from = (page - 1) * pageSize;
+  query = query.range(from, from + pageSize - 1);
+
+  const { data, count, error } = await query;
+  if (error) throw error;
+
+  let voters = (data || []).map((row) => stripPassword(mapUser(row)));
+  voters = await attachElectionAccess(voters);
+
+  if (assignedSet) {
+    voters = voters.map((v) => ({
+      ...v,
+      isAssignedToElection: assignedSet.has(String(v.id || v._id)),
+    }));
+  }
+
+  return { voters, total: count || 0 };
+}
+
+async function assignVotersToElection(voterIds, electionId) {
+  return addElectionAccessToUsers(voterIds, [electionId]);
+}
+
+async function userHasElectionAccess(userId, electionId) {
+  const ids = await getUserIdsWithElectionAccess(electionId);
+  return ids.includes(String(userId));
+}
+
+module.exports = {
+  isUuid,
+  findById,
+  findByUsername,
+  findByEmail,
+  findOne,
+  findAll,
+  countDocuments,
+  create,
+  insertMany,
+  updateById,
+  deleteById,
+  findByUsernames,
+  getAllVoters,
+  getAssignedVoterIdsForElection,
+  addElectionAccessToUsers,
+  assignVotersToElection,
+  setElectionAccess,
+  getElectionAccessForUsers,
+  attachElectionAccess,
+  userHasElectionAccess,
+  stripPassword,
+};

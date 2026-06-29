@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const User = require("../model/User");
+const users = require("../lib/supabase/users");
 
 exports.protect = async (req, res, next) => {
   try {
@@ -11,7 +11,6 @@ exports.protect = async (req, res, next) => {
     }
 
     const parts = req.headers.authorization.split(" ");
-    // Support both: "Bearer <token>" and legacy "Bearer <token> <refreshToken> <userId>"
     const token = parts[1];
 
     if (!token) {
@@ -22,7 +21,7 @@ exports.protect = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).lean();
+    req.user = await users.findById(decoded.id, { includePassword: false });
     if (!req.user) {
       return res.status(401).json({ success: false, message: "User not found" });
     }
@@ -36,7 +35,6 @@ exports.protect = async (req, res, next) => {
   }
 };
 
-// Grant access to specific roles
 exports.authorize = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req?.user?.role)) {

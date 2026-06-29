@@ -1,14 +1,15 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const User = require("../model/User");
+const users = require("../lib/supabase/users");
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "24h" });
 };
 
-// @desc    Login user
-// @route   POST /api/v1/auth/login
-// @access  Public
+function stripUser(user) {
+  return users.stripPassword(user);
+}
+
 exports.login = async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -17,10 +18,7 @@ exports.login = async (req, res) => {
       return res.status(400).json({ success: false, message: "Please provide username and password" });
     }
 
-    // Case-insensitive username lookup
-    const user = await User.findOne({
-      username: { $regex: new RegExp(`^${username}$`, "i") },
-    });
+    const user = await users.findByUsername(username);
 
     if (!user) {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
@@ -30,7 +28,6 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, message: "Account is inactive" });
     }
 
-    // Support bcrypt-hashed and plain-text passwords (migration period)
     let isMatch = false;
     try {
       isMatch = await bcrypt.compare(password, user.password);
@@ -41,12 +38,9 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
-    // Capture the previous login time BEFORE overwriting it, so the client
-    // can greet the user with their last login.
     const previousLogin = user.lastLogin || null;
 
-    // Update last login
-    await User.findByIdAndUpdate(user._id, { lastLogin: new Date() });
+    await users.updateById(user._id, { lastLogin: new Date().toISOString() });
 
     const token = generateToken(user._id.toString());
 
@@ -72,16 +66,101 @@ exports.login = async (req, res) => {
   }
 };
 
-// @desc    Get current logged-in user
-// @route   GET /api/v1/auth/me
-// @access  Private
 exports.getCurrentUser = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("-password").lean();
+    const user = await users.findById(req.user._id, { includePassword: false });
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
-    res.status(200).json({ success: true, user });
+    res.status(200).json({ success: true, user: stripUser(user) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
+exports.updateProfile = async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const existing = await users.findById(userId, { includePassword: false });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const updates = {};
+    if (req.body.fullName !== undefined) {
+      const fullName = String(req.body.fullName).trim();
+      if (!fullName) {
+        return res.status(400).json({ success: false, message: "Full name cannot be empty." });
+      }
+      updates.fullName = fullName;
+    }
+
+    if (req.body.email !== undefined) {
+      const email = String(req.body.email).trim();
+      if (email) {
+        const dup = await users.findByEmail(email);
+        if (dup && String(dup._id) !== String(userId)) {
+          return res.status(409).json({ success: false, message: "Email already in use." });
+        }
+        updates.email = email;
+      } else {
+        updates.email = null;
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ success: false, message: "No valid fields to update." });
+    }
+
+    const user = await users.updateById(userId, updates);
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully.",
+      user: stripUser(user),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password and new password are required.",
+      });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 6 characters.",
+      });
+    }
+
+    const userId = req.user._id || req.user.id;
+    const user = await users.findById(userId, { includePassword: true });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    let isMatch = false;
+    try {
+      isMatch = await bcrypt.compare(String(currentPassword), user.password);
+    } catch {
+      isMatch = String(currentPassword) === user.password;
+    }
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: "Current password is incorrect." });
+    }
+
+    const hashedPassword = await bcrypt.hash(String(newPassword), 10);
+    await users.updateById(userId, { password: hashedPassword });
+
+    res.status(200).json({ success: true, message: "Password changed successfully." });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });

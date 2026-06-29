@@ -1,159 +1,307 @@
-const User = require("../model/User");
-const VoterGroup = require("../model/VoterGroup");
+const users = require("../lib/supabase/users");
+const voterGroups = require("../lib/supabase/voterGroups");
 const bcrypt = require("bcryptjs");
 const { logUserActivity } = require("../utils/auditLog");
+const roles = require("../lib/roles");
 
-// @desc      ADD USER
-// @route     POST /api/v1/users
-// @access    public
+const generatePassword = () => {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let pw = "";
+  for (let i = 0; i < 8; i++) pw += chars[Math.floor(Math.random() * chars.length)];
+  return pw;
+};
+
+function sendError(res, err) {
+  if (err.statusCode) {
+    return res.status(err.statusCode).json({ success: false, message: err.message });
+  }
+  console.error(err);
+  return res.status(500).json({ success: false, message: err.message || err.toString() });
+}
+
+async function assertNoDuplicateUser({ username, email }) {
+  const normalized = roles.normalizeUsername(username);
+  if (!normalized) {
+    const err = new Error("username is required.");
+    err.statusCode = 400;
+    throw err;
+  }
+  const existing = await users.findByUsername(normalized);
+  if (existing) {
+    const err = new Error("Username already exists.");
+    err.statusCode = 409;
+    throw err;
+  }
+  if (email && String(email).trim()) {
+    const existingEmail = await users.findByEmail(String(email).trim());
+    if (existingEmail) {
+      const err = new Error("Email already in use.");
+      err.statusCode = 409;
+      throw err;
+    }
+  }
+  return normalized;
+}
+
+async function loadTargetUser(id) {
+  const user = await users.findById(id, { includePassword: false });
+  if (!user) {
+    const err = new Error("User not found.");
+    err.statusCode = 404;
+    throw err;
+  }
+  return user;
+}
+
 exports.addUser = async (req, res) => {
   try {
-    const existingUser = await User.findOne({ username: req.body.username });
-    if (existingUser) {
-      return res.status(409).json({ success: false, message: 'User already exists.' });
+    const targetRole = req.body.role || "voter";
+    roles.assertCanAssignRole(req.user, targetRole);
+
+    if (targetRole === "franchise_admin" && req.user.role !== "super_admin") {
+      const err = new Error("Only super admin can create franchise admins.");
+      err.statusCode = 403;
+      throw err;
     }
-    const user = await User.create(req.body);
+
+    const username = await assertNoDuplicateUser({
+      username: req.body.username,
+      email: req.body.email,
+    });
+
+    const franchiseId = roles.resolveFranchiseIdForActor(req.user, req.body.franchiseId);
+    if (
+      (targetRole === "franchise_admin" || targetRole === "election_admin" || targetRole === "voter") &&
+      !franchiseId &&
+      req.user.role !== "super_admin"
+    ) {
+      const err = new Error("franchiseId is required.");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const user = await users.create({ ...req.body, username, role: targetRole, franchiseId });
     await logUserActivity(req.user._id, req.ip, "Created", user.username, "User");
-    res.status(201).json({ success: true, message: 'User created.', user });
+    res.status(201).json({ success: true, message: "User created.", user: users.stripPassword(user) });
   } catch (err) {
-    console.error(err);
-    
-    res.status(500).json({ success: false, message: err.toString() });
+    sendError(res, err);
   }
 };
 
-// @desc      GET ALL USERS
-// @route     GET /api/v1/users
-// @access    public
 exports.getUsers = async (req, res) => {
   try {
-    const users = await User.find();
-    res.status(200).json({ success: true, data: users });
+    const filter = {};
+    if (req.user.role === "franchise_admin") {
+      filter.franchiseId = req.user.franchiseId;
+    } else if (req.user.role === "election_admin") {
+      filter.role = "voter";
+      if (req.user.franchiseId) filter.franchiseId = req.user.franchiseId;
+    }
+
+    let data = await users.findAll(filter);
+    data = roles.filterUsersForActor(req.user, data).map(users.stripPassword);
+    res.status(200).json({ success: true, data });
   } catch (err) {
-    console.error(err);
-    
-    res.status(500).json({ success: false, message: err.toString() });
+    sendError(res, err);
   }
 };
 
-// @desc      UPDATE USER
-// @route     PUT /api/v1/users
-// @access    public
 exports.updateUser = async (req, res) => {
   try {
-    const { id } = req.body;
-    const user = await User.findByIdAndUpdate(id, req.body, { new: true });
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found.' });
+    const { id } = req.params;
+    const existing = await loadTargetUser(id);
+    roles.assertCanManageUser(req.user, existing);
+
+    if (req.body.role && req.body.role !== existing.role) {
+      roles.assertCanAssignRole(req.user, req.body.role);
+      roles.assertCanManageUser(req.user, { ...existing, role: req.body.role });
     }
+
+    if (req.body.username) {
+      const normalized = roles.normalizeUsername(req.body.username);
+      if (normalized.toLowerCase() !== existing.username.toLowerCase()) {
+        const dup = await users.findByUsername(normalized);
+        if (dup) {
+          return res.status(409).json({ success: false, message: "Username already exists." });
+        }
+      }
+      req.body.username = normalized;
+    }
+
+    if (req.body.email && String(req.body.email).trim()) {
+      const normalizedEmail = String(req.body.email).trim();
+      if ((existing.email || "").toLowerCase() !== normalizedEmail.toLowerCase()) {
+        const dupEmail = await users.findByEmail(normalizedEmail);
+        if (dupEmail) {
+          return res.status(409).json({ success: false, message: "Email already in use." });
+        }
+      }
+    }
+
+    if (req.user.role !== "super_admin") {
+      delete req.body.franchiseId;
+      if (req.user.role === "election_admin") {
+        delete req.body.role;
+        delete req.body.electionAccess;
+      }
+    }
+
+    const user = await users.updateById(id, req.body);
     await logUserActivity(req.user._id, req.ip, "Updated", user.username, "User");
-    res.status(200).json({ success: true, data: user });
+    res.status(200).json({ success: true, data: users.stripPassword(user) });
   } catch (err) {
-    console.error(err);
-    
-    res.status(500).json({ success: false, message: err.toString() });
+    sendError(res, err);
   }
 };
 
-// @desc      DELETE USER
-// @route     DELETE /api/v1/users
-// @access    public
 exports.deleteUser = async (req, res) => {
   try {
     const id = req.params.id || req.query.id;
-    const user = await User.findByIdAndDelete(id);
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found.' });
-    }
+    const existing = await loadTargetUser(id);
+    roles.assertCanManageUser(req.user, existing);
+
+    const user = await users.deleteById(id);
     await logUserActivity(req.user._id, req.ip, "Deleted", user.username, "User");
-    res.status(200).json({ success: true, message: 'User deleted.' });
+    res.status(200).json({ success: true, message: "User deleted." });
   } catch (err) {
-    console.error(err);
-    
-    res.status(500).json({ success: false, message: err.toString() });
+    sendError(res, err);
   }
 };
 
-// Implement other CRUD operations similarly...
-
 exports.getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select("-password");
-    if (!user) return res.status(404).json({ success: false, message: "User not found." });
+    const user = await loadTargetUser(req.params.id);
+    if (!roles.canManageUser(req.user, user) && String(req.user._id) !== String(user._id)) {
+      return res.status(403).json({ success: false, message: "You are not allowed to view this user." });
+    }
     res.status(200).json({ success: true, data: user });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+  } catch (err) {
+    sendError(res, err);
+  }
 };
 
 exports.getFranchiseAdmins = async (req, res) => {
   try {
+    if (req.user.role === "election_admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Election admins cannot list franchise admins.",
+      });
+    }
+
     const filter = { role: "franchise_admin" };
-    if (req.query.franchiseId) filter.franchiseId = req.query.franchiseId;
-    const users = await User.find(filter).select("-password");
-    res.status(200).json({ success: true, count: users.length, data: users });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+    if (req.user.role === "franchise_admin") {
+      filter.franchiseId = req.user.franchiseId;
+    } else if (req.query.franchiseId) {
+      filter.franchiseId = req.query.franchiseId;
+    }
+
+    const data = (await users.findAll(filter)).map(users.stripPassword);
+    res.status(200).json({ success: true, count: data.length, data });
+  } catch (err) {
+    sendError(res, err);
+  }
 };
 
 exports.getElectionAdmins = async (req, res) => {
   try {
-    const users = await User.find({ role: "election_admin" }).select("-password");
-    res.status(200).json({ success: true, count: users.length, data: users });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+    if (req.user.role === "election_admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Election admins cannot list election admins.",
+      });
+    }
+
+    const filter = { role: "election_admin" };
+    if (req.user.role === "franchise_admin") {
+      filter.franchiseId = req.user.franchiseId;
+    } else if (req.query.franchiseId) {
+      filter.franchiseId = req.query.franchiseId;
+    }
+
+    const data = (await users.findAll(filter)).map(users.stripPassword);
+    res.status(200).json({ success: true, count: data.length, data });
+  } catch (err) {
+    sendError(res, err);
+  }
 };
 
 exports.getAllVoters = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const pageSize = parseInt(req.query.pageSize) || 10;
-    const query = { isVoter: true };
-    if (req.query.status) query.status = req.query.status;
-    if (req.query.electionId && req.query.electionId !== "all") {
-      // Show voters with direct access AND voters belonging to any voter group
-      // that is linked to this election (so group voters surface in the list).
-      const linkedGroups = await VoterGroup.find({ elections: req.query.electionId }).select("voters");
-      const groupVoterIds = linkedGroups.flatMap((g) => g.voters || []);
-      query.$or = [
-        { electionAccess: { $in: [req.query.electionId] } },
-        ...(groupVoterIds.length ? [{ _id: { $in: groupVoterIds } }] : []),
-      ];
+    const page = parseInt(req.query.page, 10) || 1;
+    const pageSize = parseInt(req.query.pageSize, 10) || 10;
+
+    const voterQuery = {
+      page,
+      pageSize,
+      status: req.query.status,
+      search: req.query.search,
+      electionId: req.query.electionId,
+      notInElection: req.query.notInElection,
+      notInGroup: req.query.notInGroup,
+      forElectionId: req.query.forElectionId,
+    };
+
+    if (req.user.role === "franchise_admin" || req.user.role === "election_admin") {
+      voterQuery.franchiseId = req.user.franchiseId;
     }
-    const total = await User.countDocuments(query);
-    const voters = await User.find(query)
-      .select("-password")
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize);
-    res.status(200).json({ success: true, pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) }, data: voters });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+
+    const { voters, total } = await users.getAllVoters(voterQuery);
+
+    const scoped =
+      req.user.role === "election_admin"
+        ? roles.filterUsersForActor(req.user, voters)
+        : voters;
+
+    res.status(200).json({
+      success: true,
+      pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) },
+      data: scoped,
+    });
+  } catch (err) {
+    if (err.statusCode === 400) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    sendError(res, err);
+  }
 };
 
-// @desc      CREATE SINGLE VOTER
-// @route     POST /api/v1/user/voters
-// @access    protected
 exports.createVoter = async (req, res) => {
   try {
-    const { username, password, fullName, registrationNumber, electionIds } = req.body;
-    if (!username || typeof username !== "string") {
-      return res.status(400).json({ success: false, message: "username is required." });
-    }
-    const existing = await User.findOne({ username });
-    if (existing) {
-      return res.status(409).json({ success: false, message: "Username already exists." });
-    }
-    const plainPassword = password && String(password).trim() ? String(password) : `vote${Date.now().toString().slice(-4)}`;
+    roles.assertCanAssignRole(req.user, "voter");
+
+    const username = await assertNoDuplicateUser({ username: req.body.username });
+
+    const plainPassword =
+      req.body.password && String(req.body.password).trim()
+        ? String(req.body.password).trim()
+        : generatePassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
-    const franchiseId = req.body.franchiseId || (req.user && req.user.franchiseId) || undefined;
-    const electionAccess = Array.isArray(electionIds) ? electionIds : (electionIds ? [electionIds] : []);
-    const user = await User.create({
+    const franchiseId = roles.resolveFranchiseIdForActor(req.user, req.body.franchiseId);
+    const { electionIds } = req.body;
+    const electionAccess = Array.isArray(electionIds)
+      ? electionIds
+      : electionIds
+      ? [electionIds]
+      : [];
+
+    const user = await users.create({
       username,
       password: hashedPassword,
-      fullName: fullName || username,
+      fullName: req.body.fullName || username,
       role: "voter",
       isVoter: true,
       status: "active",
-      registrationNumber: registrationNumber || username,
+      registrationNumber: req.body.registrationNumber || username,
       franchiseId,
       electionAccess,
     });
+
+    const voterGroupId = req.body.voterGroupId;
+    if (voterGroupId) {
+      await voterGroups.addVotersToGroup(voterGroupId, [user._id]);
+    }
+
     await logUserActivity(req.user._id, req.ip, "Created", user.username, "Voter");
     res.status(201).json({
       success: true,
@@ -161,22 +309,15 @@ exports.createVoter = async (req, res) => {
       data: { id: user._id, username: user.username, password: plainPassword },
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.toString() });
+    sendError(res, err);
   }
 };
 
 exports.generateVoters = async (req, res) => {
   try {
-    const {
-      prefix,
-      startingNumber,
-      count,
-      electionIds,
-      electionGroupId,
-      voterGroupId,
-      assignmentType,
-    } = req.body;
+    roles.assertCanAssignRole(req.user, "voter");
+
+    const { prefix, startingNumber, count, electionIds, voterGroupId, assignmentType } = req.body;
 
     if (!prefix || typeof prefix !== "string") {
       return res.status(400).json({ success: false, message: "prefix is required." });
@@ -192,25 +333,21 @@ exports.generateVoters = async (req, res) => {
 
     const electionAccess =
       assignmentType === "election" && Array.isArray(electionIds) ? electionIds : [];
-    const electionGroups =
-      assignmentType === "electionGroup" && electionGroupId ? [electionGroupId] : [];
 
-    // Build the list of usernames we intend to create
     const usernames = [];
     for (let i = 0; i < num; i++) usernames.push(`${prefix}${start + i}`);
 
-    // Skip usernames that already exist to avoid unique-index collisions
-    const existing = await User.find({ username: { $in: usernames } }).select("username");
-    const existingSet = new Set(existing.map((u) => u.username));
+    const existing = await users.findByUsernames(usernames);
+    const existingLower = new Set(existing.map((u) => u.username.toLowerCase()));
 
-    const franchiseId = req.body.franchiseId || (req.user && req.user.franchiseId) || undefined;
+    const franchiseId = roles.resolveFranchiseIdForActor(req.user, req.body.franchiseId);
 
     const docs = [];
     for (let i = 0; i < num; i++) {
       const seq = start + i;
       const username = `${prefix}${seq}`;
-      if (existingSet.has(username)) continue;
-      const plainPassword = `${prefix.toLowerCase()}${seq}`;
+      if (existingLower.has(username.toLowerCase())) continue;
+      const plainPassword = generatePassword();
       const hashedPassword = await bcrypt.hash(plainPassword, 10);
       docs.push({
         username,
@@ -225,9 +362,7 @@ exports.generateVoters = async (req, res) => {
         voterMetadata: {
           prefix,
           sequenceNumber: seq,
-          electionGroups,
         },
-        ...(voterGroupId ? { voterGroupId } : {}),
       });
     }
 
@@ -238,23 +373,11 @@ exports.generateVoters = async (req, res) => {
       });
     }
 
-    const created = await User.insertMany(docs, { ordered: false });
+    const created = await users.insertMany(docs);
 
-    // When assigned to a voter group, register the new voters as members and
-    // grant them access to every election the group is already linked to.
     if (voterGroupId) {
       const createdIds = created.map((u) => u._id);
-      await VoterGroup.updateOne(
-        { _id: voterGroupId },
-        { $addToSet: { voters: { $each: createdIds } } }
-      );
-      const group = await VoterGroup.findById(voterGroupId).select("elections");
-      if (group && group.elections && group.elections.length) {
-        await User.updateMany(
-          { _id: { $in: createdIds } },
-          { $addToSet: { electionAccess: { $each: group.elections } } }
-        );
-      }
+      await voterGroups.addVotersToGroup(voterGroupId, createdIds);
     }
 
     res.status(201).json({
@@ -265,40 +388,144 @@ exports.generateVoters = async (req, res) => {
       data: created.map((u) => ({ id: u._id, username: u.username })),
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.toString() });
+    sendError(res, err);
+  }
+};
+
+exports.assignVotersToElection = async (req, res) => {
+  try {
+    const { voterIds, electionId } = req.body;
+    if (!electionId) {
+      return res.status(400).json({ success: false, message: "electionId is required." });
+    }
+    if (!Array.isArray(voterIds) || voterIds.length === 0) {
+      return res.status(400).json({ success: false, message: "voterIds must be a non-empty array." });
+    }
+    if (!users.isUuid(electionId)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid electionId. Supabase uses UUID election IDs — open an election created in the current database, not an old MongoDB link.",
+      });
+    }
+    const validVoterIds = voterIds.filter((id) => users.isUuid(id));
+    if (validVoterIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid voter IDs supplied. Voter IDs must be UUIDs from the current database.",
+      });
+    }
+
+    for (const voterId of validVoterIds) {
+      const voter = await loadTargetUser(voterId);
+      if (voter.role !== "voter") {
+        return res.status(400).json({ success: false, message: "Only voters can be assigned to elections." });
+      }
+      roles.assertCanManageUser(req.user, voter);
+    }
+
+    const result = await users.assignVotersToElection(validVoterIds, electionId);
+
+    await logUserActivity(
+      req.user._id,
+      req.ip,
+      "Assigned",
+      `${result.modifiedCount} voters → election ${electionId}`,
+      "Election"
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `${result.modifiedCount} voter(s) assigned to election.`,
+      modified: result.modifiedCount,
+    });
+  } catch (err) {
+    sendError(res, err);
   }
 };
 
 exports.createFranchiseAdmin = async (req, res) => {
   try {
-    const { username, password, fullName, franchiseId } = req.body;
-    const existing = await User.findOne({ username });
-    if (existing) return res.status(409).json({ success: false, message: "Username already exists." });
+    if (req.user.role !== "super_admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Only super admin can create franchise admins.",
+      });
+    }
+
+    const { password, fullName, franchiseId } = req.body;
+    const username = await assertNoDuplicateUser({ username: req.body.username, email: req.body.email });
+
+    if (!franchiseId) {
+      return res.status(400).json({ success: false, message: "franchiseId is required." });
+    }
+    if (!password) {
+      return res.status(400).json({ success: false, message: "password is required." });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ username, password: hashedPassword, fullName, franchiseId, role: "franchise_admin" });
-    res.status(201).json({ success: true, message: "Franchise admin created.", data: { id: user._id, username: user.username, role: user.role } });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+    const user = await users.create({
+      username,
+      password: hashedPassword,
+      fullName,
+      franchiseId,
+      role: "franchise_admin",
+    });
+    res.status(201).json({
+      success: true,
+      message: "Franchise admin created.",
+      data: { id: user._id, username: user.username, role: user.role },
+    });
+  } catch (err) {
+    sendError(res, err);
+  }
 };
 
 exports.createElectionAdmin = async (req, res) => {
   try {
-    const { username, password, fullName, franchiseId, electionAccess } = req.body;
-    const existing = await User.findOne({ username });
-    if (existing) return res.status(409).json({ success: false, message: "Username already exists." });
+    roles.assertCanAssignRole(req.user, "election_admin");
+
+    const { password, fullName, electionAccess } = req.body;
+    const username = await assertNoDuplicateUser({ username: req.body.username, email: req.body.email });
+    const franchiseId = roles.resolveFranchiseIdForActor(req.user, req.body.franchiseId);
+
+    if (!franchiseId) {
+      return res.status(400).json({ success: false, message: "franchiseId is required." });
+    }
+    if (!password) {
+      return res.status(400).json({ success: false, message: "password is required." });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ username, password: hashedPassword, fullName, franchiseId, electionAccess, role: "election_admin" });
-    res.status(201).json({ success: true, message: "Election admin created.", data: { id: user._id, username: user.username, role: user.role } });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+    const user = await users.create({
+      username,
+      password: hashedPassword,
+      fullName,
+      franchiseId,
+      electionAccess,
+      role: "election_admin",
+    });
+    res.status(201).json({
+      success: true,
+      message: "Election admin created.",
+      data: { id: user._id, username: user.username, role: user.role },
+    });
+  } catch (err) {
+    sendError(res, err);
+  }
 };
 
 exports.resetPassword = async (req, res) => {
   try {
+    const existing = await loadTargetUser(req.params.id);
+    roles.assertCanManageUser(req.user, existing);
+
     const { newPassword } = req.body;
     if (!newPassword) return res.status(400).json({ success: false, message: "newPassword is required." });
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    const user = await User.findByIdAndUpdate(req.params.id, { password: hashedPassword }, { new: true });
-    if (!user) return res.status(404).json({ success: false, message: "User not found." });
+    await users.updateById(req.params.id, { password: hashedPassword });
     res.status(200).json({ success: true, message: "Password reset successfully." });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+  } catch (err) {
+    sendError(res, err);
+  }
 };

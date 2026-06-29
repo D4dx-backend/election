@@ -3,6 +3,8 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { UpdatePrompt } from "@/components/pwa/UpdatePrompt";
 import Dashboard from "@/pages/Dashboard";
 import Elections from "@/pages/Elections";
 import CreateElection from "@/pages/CreateElection";
@@ -16,6 +18,7 @@ import Franchises from "@/pages/Franchises";
 import Admins from "@/pages/Admins";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
+import Profile from "@/pages/Profile";
 import AuditLogs from "@/pages/AuditLogs";
 import VoterGroups from "@/pages/VoterGroups";
 import Login from "@/pages/Login";
@@ -25,6 +28,7 @@ import VotingBallot from "@/pages/VotingBallot";
 import VotingResults from "@/pages/VotingResults";
 import NotFound from "@/pages/not-found";
 import { useEffect } from "react";
+import { canAccessPath } from "@/lib/roles";
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -120,19 +124,61 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Access control: voters may only reach voting-related pages. If a voter
-    // lands on any admin route (by typing a URL or a stale link), bounce them
-    // back to the voting portal.
+    // ── Guard: role-based path access (super_admin > franchise_admin > election_admin > voter) ──
+    if (user && !canAccessPath(user.role, location)) {
+      const fallback =
+        user.role === "voter"
+          ? "/voting"
+          : user.role === "election_admin"
+            ? "/elections"
+            : "/";
+      if (location !== fallback) {
+        setLocation(fallback);
+        return;
+      }
+    }
+
+    // ── Guard: voters may only reach voting-related pages ──
     if (user && user.role === 'voter') {
       const voterAllowed =
         location === '/voting' ||
         location.startsWith('/election/') ||
         location.startsWith('/results/') ||
         location === '/login' ||
-        location === '/onboarding';
+        location === '/onboarding' ||
+        location === '/profile' ||
+        location === '/settings';
       if (!voterAllowed) {
         setLocation('/voting');
+        return;
       }
+    }
+
+    // ── Guard: pages that only super_admin may access ──
+    // franchise_admin and election_admin are redirected to their own home page.
+    const superAdminOnlyPaths = ['/franchises', '/admins', '/audit-logs'];
+    if (
+      user &&
+      user.role !== 'super_admin' &&
+      user.role !== 'voter' &&
+      superAdminOnlyPaths.some((p) => location === p || location.startsWith(p + '/'))
+    ) {
+      const fallback = user.role === 'election_admin' ? '/elections' : '/';
+      setLocation(fallback);
+      return;
+    }
+
+    // ── Guard: voter-only pages must not be reached by admin roles ──
+    // (Extra safety: admin accidentally navigating to /voting is sent home.)
+    const voterOnlyPaths = ['/voting'];
+    if (
+      user &&
+      user.role !== 'voter' &&
+      voterOnlyPaths.some((p) => location === p)
+    ) {
+      const adminHome = user.role === 'election_admin' ? '/elections' : '/';
+      setLocation(adminHome);
+      return;
     }
   }, [user, isLoading, isError, hasToken, location, setLocation]);
 
@@ -180,6 +226,7 @@ function Router() {
         <Route path="/admins" component={Admins} />
         <Route path="/voter-groups" component={VoterGroups} />
         <Route path="/reports" component={Reports} />
+        <Route path="/profile" component={Profile} />
         <Route path="/settings" component={Settings} />
         <Route path="/audit-logs" component={AuditLogs} />
 
@@ -195,6 +242,8 @@ function App() {
       <TooltipProvider>
         <Toaster />
         <Router />
+        <InstallPrompt />
+        <UpdatePrompt />
       </TooltipProvider>
     </QueryClientProvider>
   );

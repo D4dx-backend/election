@@ -68,6 +68,31 @@
   status = 200
   force  = true
 
+[[redirects]]
+  from   = "/api/audit-logs/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/auditLog/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/notifications"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/notifications"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/notifications/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/notifications/:splat"
+  status = 200
+  force  = true
+
+# Franchise logos, election banners, and other uploaded media served by the API.
+[[redirects]]
+  from   = "/uploads/*"
+  to     = "https://election-api-vbpil.ondigitalocean.app/uploads/:splat"
+  status = 200
+  force  = true
+
 # ── SPA fallback — must be LAST ───────────────────────────────────────────────
 [[redirects]]
   from   = "/*"

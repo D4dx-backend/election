@@ -5,6 +5,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { ElectionForm } from "@/components/elections/ElectionForm";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { extractApiList } from "@/lib/apiHelpers";
 
 export default function CreateElection() {
   const [, navigate] = useLocation();
@@ -33,9 +34,14 @@ export default function CreateElection() {
   });
 
   // Fetch election groups
-  const { data: electionGroups, isLoading: isLoadingGroups } = useQuery({
-    queryKey: ['/api/election-groups']
+  const { data: electionGroupsRaw, isLoading: isLoadingGroups } = useQuery({
+    queryKey: ['/api/election-groups'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/election-groups');
+      return res.json();
+    },
   });
+  const electionGroups = extractApiList(electionGroupsRaw);
 
   const handleSubmit = async (formData: any) => {
     try {

@@ -2,17 +2,17 @@ const router = require("express").Router();
 const { addElectionGroup, getElectionGroups, getElectionGroupById, updateElectionGroupById, deleteElectionGroupById } = require("../controllers/electionGroup");
 const { protect, authorize } = require("../middleware/auth");
 
-const admin = authorize("super_admin", "franchise_admin", "election_admin");
+const franchiseOrSuper = authorize("super_admin", "franchise_admin");
 
 router
   .route("/")
-  .post(protect, admin, addElectionGroup)
-  .get(protect, admin, getElectionGroups);
+  .post(protect, franchiseOrSuper, addElectionGroup)
+  .get(protect, franchiseOrSuper, getElectionGroups);
 
 router
   .route("/:id")
-  .get(protect, admin, getElectionGroupById)
-  .put(protect, admin, updateElectionGroupById)
-  .delete(protect, admin, deleteElectionGroupById);
+  .get(protect, franchiseOrSuper, getElectionGroupById)
+  .put(protect, franchiseOrSuper, updateElectionGroupById)
+  .delete(protect, franchiseOrSuper, deleteElectionGroupById);
 
 module.exports = router;

@@ -1,12 +1,9 @@
-const Vote = require("../model/Vote");
-const Election = require("../model/Election");
-const Nominee = require("../model/Nominee");
+const votes = require("../lib/supabase/votes");
+const elections = require("../lib/supabase/elections");
+const nominees = require("../lib/supabase/nominees");
+const users = require("../lib/supabase/users");
 const { logUserActivity } = require("../utils/auditLog");
-const User = require("../model/User");
-const mongoose = require("mongoose");
 
-// Pick the set of elected nominee ids for an election.
-// `sortedResults` must already be sorted by voteCount descending.
 function computeElectedIds(sortedResults, election) {
   const seats = Math.max(parseInt(election.numberToBeElected, 10) || 1, 1);
   const elected = new Set();
@@ -16,12 +13,10 @@ function computeElectedIds(sortedResults, election) {
     const maleMin = Math.max(parseInt(election.maleMinimum, 10) || 0, 0);
     const females = sortedResults.filter((n) => n.gender === "female");
     const males = sortedResults.filter((n) => n.gender !== "female");
-    // Reserve the gender-minimum seats for the top-voted of each gender.
     females.slice(0, Math.min(femaleMin, seats)).forEach((n) => elected.add(String(n._id)));
     males.slice(0, Math.max(Math.min(maleMin, seats - elected.size), 0)).forEach((n) => elected.add(String(n._id)));
   }
 
-  // Fill any remaining seats strictly by vote count.
   for (const n of sortedResults) {
     if (elected.size >= seats) break;
     elected.add(String(n._id));
@@ -29,41 +24,30 @@ function computeElectedIds(sortedResults, election) {
   return elected;
 }
 
-// @desc      GET ELECTION RESULTS (vote tally per nominee)
-// @route     GET /api/v1/vote/results/:electionId
-// @access    protected
 exports.getElectionResults = async (req, res) => {
   try {
     const { electionId } = req.params;
-    const election = await Election.findById(electionId).lean();
+    const election = await elections.findById(electionId);
     if (!election) return res.status(404).json({ success: false, message: "Election not found." });
 
-    // Voters may only see results once an admin has published them.
     const role = req.user && req.user.role;
     const isVoter = !role || role === "voter";
     const displayMode = election.voterResultDisplay || "full";
     if (isVoter && !election.resultsPublished) {
       return res.status(403).json({ success: false, message: "Results have not been published yet." });
     }
-    // "none" hides the result entirely from voters even after publishing.
     if (isVoter && displayMode === "none") {
       return res.status(403).json({ success: false, message: "Results are not shown for this election." });
     }
 
-    const totalBallots = await Vote.countDocuments({ electionId });
+    const totalBallots = await votes.countDocuments({ electionId });
 
-    const tally = await Vote.aggregate([
-      { $match: { electionId: new mongoose.Types.ObjectId(electionId) } },
-      { $unwind: "$nominees" },
-      { $group: { _id: "$nominees", voteCount: { $sum: 1 } } },
-    ]);
-    const tallyMap = {};
-    tally.forEach((t) => { tallyMap[t._id.toString()] = t.voteCount; });
+    const tallyMap = await votes.getTallyForElection(electionId);
 
-    const nominees = await Nominee.find({ electionId }).lean();
-    const results = nominees
+    const nomineeList = await nominees.findByElection(electionId);
+    const results = nomineeList
       .map((n) => {
-        const voteCount = tallyMap[n._id.toString()] || 0;
+        const voteCount = tallyMap[String(n._id)] || 0;
         return {
           _id: n._id,
           id: n._id,
@@ -76,14 +60,11 @@ exports.getElectionResults = async (req, res) => {
       })
       .sort((a, b) => b.voteCount - a.voteCount);
 
-    // Determine winners server-side. When the election uses gender-based
-    // selection we honour maleMinimum/femaleMinimum first (reserve those seats
-    // for the top-voted nominees of each gender), then fill the rest by votes.
     const electedIds = computeElectedIds(results, election);
-    results.forEach((r) => { r.isElected = electedIds.has(String(r._id)); });
+    results.forEach((r) => {
+      r.isElected = electedIds.has(String(r._id));
+    });
 
-    // Voters only see the level of detail the admin configured. Admins always
-    // get the full breakdown. Strip server-side so hidden numbers never leak.
     const showScore = !isVoter || displayMode === "score" || displayMode === "full";
     const showPercentage = !isVoter || displayMode === "percentage" || displayMode === "full";
     const visibleResults = results.map((r) => ({
@@ -92,7 +73,8 @@ exports.getElectionResults = async (req, res) => {
       percentage: showPercentage ? r.percentage : undefined,
     }));
 
-    const eligibleVoters = await User.countDocuments({ isVoter: true, electionAccess: electionId });
+    const assignedIds = await users.getAssignedVoterIdsForElection(electionId);
+    const eligibleVoters = assignedIds.length;
 
     return res.status(200).json({
       success: true,
@@ -123,53 +105,57 @@ exports.getElectionResults = async (req, res) => {
   }
 };
 
-// @desc      ADD VOTE
-// @route     POST /api/v1/votes
-// @access    public
 exports.addVote = async (req, res) => {
   try {
-    const vote = await Vote.create(req.body);
+    const vote = await votes.create(req.body);
     await logUserActivity(req.user._id, req.ip, "Voted", vote.electionId, "Vote");
-    res.status(201).json({ success: true, message: 'Vote recorded.', vote });
+    res.status(201).json({ success: true, message: "Vote recorded.", vote });
   } catch (err) {
     console.error(err);
-    errorLog(req, err);
     res.status(500).json({ success: false, message: err.toString() });
   }
 };
 
-// Implement other CRUD operations similarly...
-
 exports.getAvailableElections = async (req, res) => {
   try {
-    const voter = await User.findById(req.user._id);
+    const voter = await users.findById(req.user._id);
     if (!voter || !voter.electionAccess || voter.electionAccess.length === 0) {
       return res.status(200).json({ success: true, count: 0, data: [] });
     }
-    const elections = await Election.find({
-      _id: { $in: voter.electionAccess },
-      votingOpen: true,
-    }).populate("franchiseId", "name logo");
-    res.status(200).json({ success: true, count: elections.length, data: elections });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+    const data = await elections.findByIdsWithFranchise(voter.electionAccess, { votingOpen: true });
+    res.status(200).json({ success: true, count: data.length, data });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
 };
 
 exports.checkVoterStatus = async (req, res) => {
   try {
-    const votes = await Vote.find({ voterId: req.user._id });
+    const voteList = await votes.findByVoter(req.user._id);
     const votingStatus = {};
-    votes.forEach(v => { votingStatus[v.electionId.toString()] = "voted"; });
+    voteList.forEach((v) => {
+      votingStatus[String(v.electionId)] = "voted";
+    });
     res.status(200).json({ success: true, data: votingStatus });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
 };
 
 exports.getMyVote = async (req, res) => {
   try {
-    const vote = await Vote.findOne({ voterId: req.user._id, electionId: req.params.electionId })
-      .populate("nominees", "name photo");
+    const vote = await votes.findOne({
+      voterId: req.user._id,
+      electionId: req.params.electionId,
+    });
     if (!vote) return res.status(404).json({ success: false, message: "No vote found for this election." });
     res.status(200).json({ success: true, data: vote });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
 };
 
 exports.castVote = async (req, res) => {
@@ -181,31 +167,28 @@ exports.castVote = async (req, res) => {
       return res.status(400).json({ success: false, message: "nomineeIds array is required." });
     }
 
-    const election = await Election.findById(electionId);
+    const election = await elections.findById(electionId);
     if (!election) return res.status(404).json({ success: false, message: "Election not found." });
     if (!election.votingOpen) return res.status(400).json({ success: false, message: "Election is not open for voting." });
 
-    const voter = await User.findById(req.user._id);
-    if (!voter || !voter.electionAccess || !voter.electionAccess.some(id => id.toString() === electionId)) {
+    const hasAccess = await users.userHasElectionAccess(req.user._id, electionId);
+    if (!hasAccess) {
       return res.status(403).json({ success: false, message: "Voter does not have access to this election." });
     }
 
-    // Deduplicate so a voter can't repeat the same nominee to inflate the tally.
     const uniqueNomineeIds = [...new Set(nomineeIds.map((id) => String(id)))];
     if (uniqueNomineeIds.length > election.numberToBeElected) {
-      return res.status(400).json({ success: false, message: `Maximum nominees to select: ${election.numberToBeElected}` });
+      return res.status(400).json({
+        success: false,
+        message: `Maximum nominees to select: ${election.numberToBeElected}`,
+      });
     }
 
-    // Every selected nominee must actually belong to this election.
-    const selectedNominees = await Nominee.find({
-      _id: { $in: uniqueNomineeIds },
-      electionId,
-    });
+    const selectedNominees = await nominees.findByIdsAndElection(uniqueNomineeIds, electionId);
     if (selectedNominees.length !== uniqueNomineeIds.length) {
       return res.status(400).json({ success: false, message: "One or more selected nominees are invalid for this election." });
     }
 
-    // Enforce gender minimums only when the election uses gender-based selection.
     if (election.genderBasedSelection) {
       const maleCount = selectedNominees.filter((n) => n.gender !== "female").length;
       const femaleCount = selectedNominees.filter((n) => n.gender === "female").length;
@@ -217,49 +200,46 @@ exports.castVote = async (req, res) => {
       }
     }
 
-    const existing = await Vote.findOne({ voterId: req.user._id, electionId });
+    const existing = await votes.findOne({ voterId: req.user._id, electionId });
     if (existing) return res.status(400).json({ success: false, message: "Already voted in this election." });
 
-    let vote;
     try {
-      vote = await Vote.create({
+      const vote = await votes.create({
         electionId,
         voterId: req.user._id,
         nominees: uniqueNomineeIds,
         ipAddress: req.ip,
         status: "completed",
       });
+      res.status(201).json({ success: true, message: "Vote cast successfully.", data: vote });
     } catch (createErr) {
-      // Unique index {electionId, voterId} → a concurrent request already voted.
-      if (createErr && createErr.code === 11000) {
+      if (createErr && createErr.code === 23505) {
         return res.status(400).json({ success: false, message: "Already voted in this election." });
       }
       throw createErr;
     }
-    res.status(201).json({ success: true, message: "Vote cast successfully.", data: vote });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
-};
-// @route     GET /api/v1/vote
-// @access    Protected
-exports.getVotes = async (req, res) => {
-  try {
-    const votes = await Vote.find();
-    res.status(200).json({ success: true, count: votes.length, data: votes });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });
   }
 };
 
-// @desc      UPDATE VOTE
-// @route     PUT /api/v1/vote
-// @access    Protected
+exports.getVotes = async (req, res) => {
+  try {
+    const data = await votes.findAll();
+    res.status(200).json({ success: true, count: data.length, data });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
 exports.updateVote = async (req, res) => {
   try {
     const { id } = req.body;
-    const vote = await Vote.findByIdAndUpdate(id, req.body, { new: true });
+    const vote = await votes.updateById(id, req.body);
     if (!vote) {
-      return res.status(404).json({ success: false, message: 'Vote not found.' });
+      return res.status(404).json({ success: false, message: "Vote not found." });
     }
     res.status(200).json({ success: true, data: vote });
   } catch (err) {
@@ -268,17 +248,14 @@ exports.updateVote = async (req, res) => {
   }
 };
 
-// @desc      DELETE VOTE
-// @route     DELETE /api/v1/vote
-// @access    Protected
 exports.deleteVote = async (req, res) => {
   try {
     const { id } = req.query;
-    const vote = await Vote.findByIdAndDelete(id);
+    const vote = await votes.deleteById(id);
     if (!vote) {
-      return res.status(404).json({ success: false, message: 'Vote not found.' });
+      return res.status(404).json({ success: false, message: "Vote not found." });
     }
-    res.status(200).json({ success: true, message: 'Vote deleted.' });
+    res.status(200).json({ success: true, message: "Vote deleted." });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });
