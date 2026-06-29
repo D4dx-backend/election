@@ -173,6 +173,7 @@ export function ElectionForm({
                   <SelectValue placeholder="Select what voters see" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">No Result (hide from voters)</SelectItem>
                   <SelectItem value="result_only">Only Result (winners)</SelectItem>
                   <SelectItem value="percentage">Result with Percentage</SelectItem>
                   <SelectItem value="score">Result with Score (votes)</SelectItem>

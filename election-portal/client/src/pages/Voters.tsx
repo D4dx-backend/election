@@ -4,7 +4,6 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { VoterBulkGenerator } from "@/components/voters/VoterBulkGenerator";
 import { VotersTable } from "@/components/voters/VotersTable";
 import { BulkVoterSlipPrinter } from "@/components/voters/BulkVoterSlipPrinter";
-import VoterGroups from "@/pages/VoterGroups";
 import { Button } from "@/components/ui/button";
 import { PlusIcon, Upload, AlertCircle, UsersRound } from "lucide-react";
 import { BulkVoterGenerationOptions, Pagination, User, Election, ElectionGroup } from "@/lib/types";
@@ -394,7 +393,6 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
             onExport={handleExportVoters}
             elections={displayElections}
           />
-          {embedded && <VoterGroups embedded electionId={electionId} />}
         </div>
       )}
 

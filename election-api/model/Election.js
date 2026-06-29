@@ -28,7 +28,7 @@ const ElectionSchema = new mongoose.Schema(
     resultsPublishedAt: Date,
     voterResultDisplay: {
       type: String,
-      enum: ["result_only", "percentage", "score", "full"],
+      enum: ["none", "result_only", "percentage", "score", "full"],
       default: "full",
     },
     createdBy: {

@@ -5,6 +5,7 @@ export interface ResultPdfNominee {
   gender?: string;
   voteCount?: number;
   percentage?: number;
+  isElected?: boolean;
 }
 
 export interface ResultPdfData {
@@ -176,7 +177,10 @@ export async function generateElectionResultPdf({
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   sorted.forEach((nominee, index) => {
-    const elected = index < numberToBeElected;
+    // Prefer the server's quota-aware winner flag; fall back to rank.
+    const elected = typeof nominee.isElected === "boolean"
+      ? nominee.isElected
+      : index < numberToBeElected;
     if (y + rowHeight > pageHeight - 40) {
       doc.addPage();
       y = margin;

@@ -106,11 +106,31 @@ export function Sidebar({ isOpen, userRole = '' }: SidebarProps) {
           )}
           {/* Only super admin manages franchises at the top level */}
           {isSuperAdmin && (
-            <NavLink 
-              href="/franchises" 
-              icon={<Building className="mr-3 h-5 w-5 text-gray-600" />} 
-              label="Franchises" 
+            <NavLink
+              href="/franchises"
+              icon={<Building className="mr-3 h-5 w-5 text-gray-600" />}
+              label="Franchises"
             />
+          )}
+          {/* Voter & election organisation — available to election-running admins */}
+          {!isSuperAdmin && (
+            <>
+              <NavLink
+                href="/voters"
+                icon={<Users className="mr-3 h-5 w-5 text-gray-600" />}
+                label="Voters"
+              />
+              <NavLink
+                href="/voter-groups"
+                icon={<UserPlus className="mr-3 h-5 w-5 text-gray-600" />}
+                label="Voter Groups"
+              />
+              <NavLink
+                href="/election-groups"
+                icon={<Folder className="mr-3 h-5 w-5 text-gray-600" />}
+                label="Election Groups"
+              />
+            </>
           )}
         </div>
 

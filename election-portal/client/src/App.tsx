@@ -119,6 +119,21 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
         setLocation(targetPath);
       }
     }
+
+    // Access control: voters may only reach voting-related pages. If a voter
+    // lands on any admin route (by typing a URL or a stale link), bounce them
+    // back to the voting portal.
+    if (user && user.role === 'voter') {
+      const voterAllowed =
+        location === '/voting' ||
+        location.startsWith('/election/') ||
+        location.startsWith('/results/') ||
+        location === '/login' ||
+        location === '/onboarding';
+      if (!voterAllowed) {
+        setLocation('/voting');
+      }
+    }
   }, [user, isLoading, isError, hasToken, location, setLocation]);
 
   // Show loading state while checking authentication 

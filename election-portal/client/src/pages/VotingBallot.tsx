@@ -40,6 +40,13 @@ export default function VotingBallot() {
   const [selectedMaleCount, setSelectedMaleCount] = useState(0);
   const [selectedFemaleCount, setSelectedFemaleCount] = useState(0);
 
+  // Try to close the voting tab/app after a successful vote. window.close()
+  // only works for script-opened tabs, so fall back to the voting list.
+  const handleCloseApp = () => {
+    window.close();
+    setTimeout(() => navigate('/voting'), 300);
+  };
+
   // Get election details
   const { 
     data: electionData, 
@@ -366,9 +373,17 @@ export default function VotingBallot() {
               </div>
             </div>
             
-            <Button onClick={() => navigate('/')} size="lg" className="w-full sm:w-auto">
-              Return to Elections
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button onClick={() => navigate('/voting')} size="lg" variant="outline" className="w-full sm:w-auto">
+                Return to Elections
+              </Button>
+              <Button onClick={handleCloseApp} size="lg" className="w-full sm:w-auto">
+                Close
+              </Button>
+            </div>
+            <p className="text-xs text-gray-400 mt-3">
+              If the tab does not close automatically, you can close it manually.
+            </p>
           </div>
         </div>
       </VoterLayout>

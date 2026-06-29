@@ -1,4 +1,5 @@
 const User = require("../model/User");
+const VoterGroup = require("../model/VoterGroup");
 const bcrypt = require("bcryptjs");
 const { logUserActivity } = require("../utils/auditLog");
 
@@ -106,7 +107,14 @@ exports.getAllVoters = async (req, res) => {
     const query = { isVoter: true };
     if (req.query.status) query.status = req.query.status;
     if (req.query.electionId && req.query.electionId !== "all") {
-      query.electionAccess = { $in: [req.query.electionId] };
+      // Show voters with direct access AND voters belonging to any voter group
+      // that is linked to this election (so group voters surface in the list).
+      const linkedGroups = await VoterGroup.find({ elections: req.query.electionId }).select("voters");
+      const groupVoterIds = linkedGroups.flatMap((g) => g.voters || []);
+      query.$or = [
+        { electionAccess: { $in: [req.query.electionId] } },
+        ...(groupVoterIds.length ? [{ _id: { $in: groupVoterIds } }] : []),
+      ];
     }
     const total = await User.countDocuments(query);
     const voters = await User.find(query)
@@ -231,6 +239,24 @@ exports.generateVoters = async (req, res) => {
     }
 
     const created = await User.insertMany(docs, { ordered: false });
+
+    // When assigned to a voter group, register the new voters as members and
+    // grant them access to every election the group is already linked to.
+    if (voterGroupId) {
+      const createdIds = created.map((u) => u._id);
+      await VoterGroup.updateOne(
+        { _id: voterGroupId },
+        { $addToSet: { voters: { $each: createdIds } } }
+      );
+      const group = await VoterGroup.findById(voterGroupId).select("elections");
+      if (group && group.elections && group.elections.length) {
+        await User.updateMany(
+          { _id: { $in: createdIds } },
+          { $addToSet: { electionAccess: { $each: group.elections } } }
+        );
+      }
+    }
+
     res.status(201).json({
       success: true,
       message: `Generated ${created.length} voter accounts.`,

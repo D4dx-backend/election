@@ -35,16 +35,32 @@ interface BulkVoterSlipPrinterProps {
   selectedElectionId?: string;
   label?: string;
   className?: string;
+  // Optional controlled mode (e.g. opened from a group "Print Slips" button
+  // instead of this component's own trigger).
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+  title?: string;
 }
 
-export function BulkVoterSlipPrinter({ 
-  voters, 
+export function BulkVoterSlipPrinter({
+  voters,
   elections,
   selectedElectionId,
   label = "Bulk Print Slips",
   className,
+  open: openProp,
+  onOpenChange,
+  hideTrigger = false,
+  title,
 }: BulkVoterSlipPrinterProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp! : internalOpen;
+  const setOpen = (o: boolean) => {
+    if (isControlled) onOpenChange?.(o);
+    else setInternalOpen(o);
+  };
   const { toast } = useToast();
   
   // Function to get election names for voters
@@ -149,7 +165,7 @@ export function BulkVoterSlipPrinter({
       doc.setFontSize(16);
       doc.text("Voter Credentials", pageWidth / 2, 10, { align: 'center' });
       doc.setFontSize(10);
-      doc.text(`Election: ${selectedElectionId ? getElectionTitle(selectedElectionId) : 'All Elections'}`, pageWidth / 2, 15, { align: 'center' });
+      doc.text(`${title ? title : `Election: ${selectedElectionId ? getElectionTitle(selectedElectionId) : 'All Elections'}`}`, pageWidth / 2, 15, { align: 'center' });
       doc.text(`Generated on: ${new Date().toLocaleDateString()}`, pageWidth / 2, 20, { align: 'center' });
       
       // Calculate how many voters to process based on slips per page
@@ -261,12 +277,14 @@ export function BulkVoterSlipPrinter({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className={className}>
-          <Printer className="mr-2 h-4 w-4" />
-          {label}
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className={className}>
+            <Printer className="mr-2 h-4 w-4" />
+            {label}
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Print Voter Slips</DialogTitle>

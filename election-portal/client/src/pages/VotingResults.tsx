@@ -324,7 +324,11 @@ export default function VotingResults() {
                 {[...publishedResults.nominees]
                   .sort((a: any, b: any) => ((b.voteCount ?? b.percentage ?? 0) - (a.voteCount ?? a.percentage ?? 0)))
                   .map((n: any, idx: number) => {
-                    const elected = idx < (publishedResults.election?.numberToBeElected || 1);
+                    // Prefer the server-computed winner flag (honours gender
+                    // quota); fall back to rank only if it's absent.
+                    const elected = typeof n.isElected === 'boolean'
+                      ? n.isElected
+                      : idx < (publishedResults.election?.numberToBeElected || 1);
                     return (
                       <div
                         key={n._id || n.id || idx}

@@ -5,6 +5,30 @@ const { logUserActivity } = require("../utils/auditLog");
 const User = require("../model/User");
 const mongoose = require("mongoose");
 
+// Pick the set of elected nominee ids for an election.
+// `sortedResults` must already be sorted by voteCount descending.
+function computeElectedIds(sortedResults, election) {
+  const seats = Math.max(parseInt(election.numberToBeElected, 10) || 1, 1);
+  const elected = new Set();
+
+  if (election.genderBasedSelection) {
+    const femaleMin = Math.max(parseInt(election.femaleMinimum, 10) || 0, 0);
+    const maleMin = Math.max(parseInt(election.maleMinimum, 10) || 0, 0);
+    const females = sortedResults.filter((n) => n.gender === "female");
+    const males = sortedResults.filter((n) => n.gender !== "female");
+    // Reserve the gender-minimum seats for the top-voted of each gender.
+    females.slice(0, Math.min(femaleMin, seats)).forEach((n) => elected.add(String(n._id)));
+    males.slice(0, Math.max(Math.min(maleMin, seats - elected.size), 0)).forEach((n) => elected.add(String(n._id)));
+  }
+
+  // Fill any remaining seats strictly by vote count.
+  for (const n of sortedResults) {
+    if (elected.size >= seats) break;
+    elected.add(String(n._id));
+  }
+  return elected;
+}
+
 // @desc      GET ELECTION RESULTS (vote tally per nominee)
 // @route     GET /api/v1/vote/results/:electionId
 // @access    protected
@@ -17,8 +41,13 @@ exports.getElectionResults = async (req, res) => {
     // Voters may only see results once an admin has published them.
     const role = req.user && req.user.role;
     const isVoter = !role || role === "voter";
+    const displayMode = election.voterResultDisplay || "full";
     if (isVoter && !election.resultsPublished) {
       return res.status(403).json({ success: false, message: "Results have not been published yet." });
+    }
+    // "none" hides the result entirely from voters even after publishing.
+    if (isVoter && displayMode === "none") {
+      return res.status(403).json({ success: false, message: "Results are not shown for this election." });
     }
 
     const totalBallots = await Vote.countDocuments({ electionId });
@@ -47,9 +76,14 @@ exports.getElectionResults = async (req, res) => {
       })
       .sort((a, b) => b.voteCount - a.voteCount);
 
+    // Determine winners server-side. When the election uses gender-based
+    // selection we honour maleMinimum/femaleMinimum first (reserve those seats
+    // for the top-voted nominees of each gender), then fill the rest by votes.
+    const electedIds = computeElectedIds(results, election);
+    results.forEach((r) => { r.isElected = electedIds.has(String(r._id)); });
+
     // Voters only see the level of detail the admin configured. Admins always
     // get the full breakdown. Strip server-side so hidden numbers never leak.
-    const displayMode = election.voterResultDisplay || "full";
     const showScore = !isVoter || displayMode === "score" || displayMode === "full";
     const showPercentage = !isVoter || displayMode === "percentage" || displayMode === "full";
     const visibleResults = results.map((r) => ({

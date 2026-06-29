@@ -1,5 +1,19 @@
 const VoterGroup = require("../model/VoterGroup");
+const User = require("../model/User");
 const { logUserActivity } = require("../utils/auditLog");
+
+// Linking a group to elections must grant every voter in that group access to
+// those elections, otherwise they cannot actually vote. Idempotent via $addToSet.
+async function syncGroupVotersAccess(group) {
+  if (!group) return;
+  const voters = group.voters || [];
+  const elections = group.elections || [];
+  if (voters.length === 0 || elections.length === 0) return;
+  await User.updateMany(
+    { _id: { $in: voters } },
+    { $addToSet: { electionAccess: { $each: elections } } }
+  );
+}
 
 // @desc      ADD VOTER GROUP
 // @route     POST /api/v1/voter-groups
@@ -7,11 +21,11 @@ const { logUserActivity } = require("../utils/auditLog");
 exports.addVoterGroup = async (req, res) => {
   try {
     const voterGroup = await VoterGroup.create(req.body);
+    await syncGroupVotersAccess(voterGroup);
     await logUserActivity(req.user._id, req.ip, "Created", voterGroup.name, "Voter Group");
     res.status(201).json({ success: true, message: 'Voter Group created.', voterGroup });
   } catch (err) {
     console.error(err);
-    errorLog(req, err);
     res.status(500).json({ success: false, message: err.toString() });
   }
 };
@@ -20,7 +34,9 @@ exports.addVoterGroup = async (req, res) => {
 
 exports.getVoterGroupById = async (req, res) => {
   try {
-    const vg = await VoterGroup.findById(req.params.id);
+    const vg = await VoterGroup.findById(req.params.id)
+      .populate("elections", "title organization")
+      .populate("voters", "username status registrationNumber electionAccess voterMetadata");
     if (!vg) return res.status(404).json({ success: false, message: 'Voter Group not found.' });
     res.status(200).json({ success: true, data: vg });
   } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
@@ -30,6 +46,8 @@ exports.updateVoterGroupById = async (req, res) => {
   try {
     const vg = await VoterGroup.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!vg) return res.status(404).json({ success: false, message: 'Voter Group not found.' });
+    // Re-sync access whenever the links or membership change.
+    await syncGroupVotersAccess(vg);
     res.status(200).json({ success: true, data: vg });
   } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
 };
@@ -53,6 +71,7 @@ exports.getVoterGroups = async (req, res) => {
       const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
       const total = await VoterGroup.countDocuments();
       const paged = await VoterGroup.find()
+        .populate("elections", "title organization")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit);
@@ -65,7 +84,7 @@ exports.getVoterGroups = async (req, res) => {
       });
     }
 
-    const voterGroups = await VoterGroup.find();
+    const voterGroups = await VoterGroup.find().populate("elections", "title organization");
     res.status(200).json({ success: true, count: voterGroups.length, data: voterGroups });
   } catch (err) {
     console.error(err);
