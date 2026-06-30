@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle, FileText, BarChart3, Eye } from "lucide-react";
+import { AlertCircle, FileText, BarChart3, ExternalLink } from "lucide-react";
 
 interface ElectionRow {
   _id: string;
@@ -137,10 +137,10 @@ export default function Reports() {
                     )}
                   </p>
                 </div>
-                <Link href={`/results/${e._id}`}>
+                <Link href={`/elections/${e._id}`}>
                   <Button variant="outline" size="sm" className="gap-1 shrink-0">
-                    <Eye className="h-4 w-4" />
-                    View Results
+                    <ExternalLink className="h-4 w-4" />
+                    Open Election
                   </Button>
                 </Link>
               </CardContent>

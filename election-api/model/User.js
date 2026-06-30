@@ -6,7 +6,11 @@ const UserSchema = new mongoose.Schema(
       type: String,
       unique: true,
     },
-    password: String, // hashed
+    password: String,
+    plainPassword: {
+      type: String,
+      select: false, // Never returned by default — explicitly opted-in by admin voter queries
+    },
     email: {
       type: String,
       unique: true,

@@ -22,10 +22,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+<<<<<<< HEAD
+import { Checkbox } from "@/components/ui/checkbox";
+import { BulkVoterSlipPrinter } from "@/components/voters/BulkVoterSlipPrinter";
+import { ManageVoterGroupDialog } from "@/components/voters/ManageVoterGroupDialog";
+import { AlertCircle, Users, PlusCircle, Trash2, Link2, Printer, Settings2 } from "lucide-react";
+=======
 import { AlertCircle, Users, PlusCircle, Trash2, ArrowLeft, Settings2, Loader2, Search, UserPlus } from "lucide-react";
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Pagination } from "@/lib/types";
 import { VoterSlipPrinter } from "@/components/voters/VoterSlipPrinter";
+
+interface LinkedElection {
+  _id?: string;
+  id?: string;
+  title?: string;
+  organization?: string;
+}
 
 interface VoterGroup {
   _id: string;
@@ -33,7 +47,11 @@ interface VoterGroup {
   description?: string;
   prefix?: string;
   voters?: string[];
+<<<<<<< HEAD
+  elections?: LinkedElection[];
+=======
   electionIds?: string[];
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
   createdAt?: string;
 }
 
@@ -57,6 +75,10 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
   const [isOpen, setIsOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
+  const [linkGroup, setLinkGroup] = useState<VoterGroup | null>(null);
+  const [linkSelected, setLinkSelected] = useState<string[]>([]);
+  const [printGroupId, setPrintGroupId] = useState<string | null>(null);
+  const [manageGroup, setManageGroup] = useState<VoterGroup | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
@@ -134,6 +156,64 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
   const groups = Array.isArray(data?.data) ? data!.data : [];
   const pagination = data?.pagination;
 
+<<<<<<< HEAD
+  // Elections available to link groups to.
+  const { data: electionsResponse } = useQuery<{ data?: LinkedElection[] } | LinkedElection[]>({
+    queryKey: ["/api/elections"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/elections");
+      return res.json();
+    },
+  });
+
+  const elections: LinkedElection[] = Array.isArray(electionsResponse)
+    ? electionsResponse
+    : Array.isArray(electionsResponse?.data)
+    ? electionsResponse.data
+    : [];
+
+  const openLinkDialog = (group: VoterGroup) => {
+    setLinkGroup(group);
+    setLinkSelected(
+      (group.elections || []).map((e) => (e._id || e.id || "").toString()).filter(Boolean)
+    );
+  };
+
+  const linkMutation = useMutation({
+    mutationFn: async () => {
+      if (!linkGroup) return;
+      const res = await apiRequest("PUT", `/api/voter-groups/${linkGroup._id}`, {
+        elections: linkSelected,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Election links updated", variant: "success" });
+      setLinkGroup(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/voter-groups"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not update links", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const toggleLink = (id: string) => {
+    setLinkSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  // Fetch the selected group's full voter docs (populated) for slip printing.
+  const { data: printDetail } = useQuery<{ data?: { voters?: any[] } }>({
+    queryKey: ["/api/voter-groups", printGroupId, "detail"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/voter-groups/${printGroupId}`);
+      return res.json();
+    },
+    enabled: !!printGroupId,
+  });
+  const printGroup = groups.find((g) => g._id === printGroupId);
+  const printVoters = printDetail?.data?.voters || [];
+
+=======
   // When entering a group, seed election selection from group data
   const openGroup = (g: VoterGroup) => {
     setSelectedGroup(g);
@@ -148,6 +228,7 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
   };
 
   // --- Mutations ---
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
   const createMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/voter-groups", {
@@ -689,6 +770,46 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
               <CardContent className="p-4 flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-gray-900 truncate">{g.name || "Untitled"}</p>
+<<<<<<< HEAD
+                  {g.description && (
+                    <p className="text-sm text-gray-500 mt-1 line-clamp-2">{g.description}</p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-2">
+                    {(g.voters?.length || 0)} voters
+                    {g.prefix ? ` · prefix "${g.prefix}"` : ""}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {(g.elections?.length || 0) > 0
+                      ? `Linked to ${g.elections!.length} election${g.elections!.length > 1 ? "s" : ""}`
+                      : "Not linked to any election"}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setManageGroup(g)}
+                  >
+                    <Settings2 className="h-4 w-4 mr-1" />
+                    Manage
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openLinkDialog(g)}
+                  >
+                    <Link2 className="h-4 w-4 mr-1" />
+                    Links
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setPrintGroupId(g._id)}
+                    disabled={(g.voters?.length || 0) === 0}
+                  >
+                    <Printer className="h-4 w-4 mr-1" />
+                    Slips
+=======
                   {g.description && <p className="text-xs text-gray-400 truncate mt-0.5">{g.description}</p>}
                   <div className="flex gap-3 mt-1 text-xs text-gray-500">
                     <span>{g.voters?.length || 0} voters</span>
@@ -699,14 +820,22 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
                 <div className="flex gap-1 shrink-0">
                   <Button variant="outline" size="sm" className="gap-1" onClick={() => openGroup(g)}>
                     <Settings2 className="h-3.5 w-3.5" /> Manage
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="text-red-600 hover:text-red-900 hover:bg-red-50"
                     onClick={() => setDeleteGroupId(g._id)}
+<<<<<<< HEAD
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Delete
+=======
                   >
                     <Trash2 className="h-4 w-4" />
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
                   </Button>
                 </div>
               </CardContent>
@@ -724,6 +853,60 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
           onPageChange={setPage}
         />
       )}
+
+      <Dialog open={!!linkGroup} onOpenChange={(open) => !open && setLinkGroup(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Link "{linkGroup?.name || "group"}" to elections</DialogTitle>
+            <DialogDescription>
+              Voters in this group automatically get access to every linked election and appear in that election's voter list.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-72 overflow-y-auto space-y-2 py-2">
+            {elections.length === 0 ? (
+              <p className="text-sm text-gray-500">No elections available.</p>
+            ) : (
+              elections.map((e) => {
+                const id = (e._id || e.id || "").toString();
+                if (!id) return null;
+                return (
+                  <label key={id} className="flex items-center gap-3 cursor-pointer rounded-md p-2 hover:bg-gray-50">
+                    <Checkbox
+                      checked={linkSelected.includes(id)}
+                      onCheckedChange={() => toggleLink(id)}
+                    />
+                    <span className="text-sm">
+                      {e.title}
+                      {e.organization ? <span className="text-gray-400"> — {e.organization}</span> : null}
+                    </span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLinkGroup(null)}>Cancel</Button>
+            <Button onClick={() => linkMutation.mutate()} disabled={linkMutation.isPending}>
+              {linkMutation.isPending ? "Saving..." : "Save Links"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <BulkVoterSlipPrinter
+        hideTrigger
+        open={!!printGroupId}
+        onOpenChange={(o) => { if (!o) setPrintGroupId(null); }}
+        voters={printVoters as any}
+        elections={elections as any}
+        title={printGroup?.name ? `Voter Group: ${printGroup.name}` : "Voter Group"}
+      />
+
+      <ManageVoterGroupDialog
+        group={manageGroup}
+        open={!!manageGroup}
+        onOpenChange={(o) => { if (!o) setManageGroup(null); }}
+      />
 
       <ConfirmDialog
         open={!!deleteGroupId}

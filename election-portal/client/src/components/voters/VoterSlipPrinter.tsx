@@ -12,14 +12,20 @@ import { Printer, Copy } from "lucide-react";
 import { User } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
 
+type VoterForSlip = User & { plainPassword?: string; _id?: string };
+
 interface VoterSlipPrinterProps {
-  voter: User;
+  voter: VoterForSlip;
   electionNames: string[];
 }
 
 export function VoterSlipPrinter({ voter, electionNames }: VoterSlipPrinterProps) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
+
+  // Use the stored plain-text password when available; fall back gracefully
+  // for voters created before this feature was added.
+  const displayPassword = voter.plainPassword || voter.username?.toLowerCase() || "N/A";
 
   const printSlip = () => {
     const printWindow = window.open('', '_blank');
@@ -120,7 +126,11 @@ export function VoterSlipPrinter({ voter, electionNames }: VoterSlipPrinterProps
             </div>
             <div class="credential-item">
               <div class="label">Password:</div>
+<<<<<<< HEAD
+              <div class="value">${displayPassword}</div>
+=======
               <div class="value">${(voter as any).plainPassword || voter.username?.toLowerCase() || 'N/A'}</div>
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
             </div>
             <div class="credential-item">
               <div class="label">Status:</div>
@@ -164,7 +174,11 @@ export function VoterSlipPrinter({ voter, electionNames }: VoterSlipPrinterProps
   const copyCredentials = () => {
     const credentials = `
 Username: ${voter.username}
+<<<<<<< HEAD
+Password: ${displayPassword}
+=======
 Password: ${(voter as any).plainPassword || voter.username?.toLowerCase() || 'N/A'}
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
 Status: ${voter.status || 'Active'}
 Elections: ${electionNames.join(', ') || 'None assigned'}
     `;
@@ -207,7 +221,11 @@ Elections: ${electionNames.join(', ') || 'None assigned'}
             <div className="col-span-2">{voter.username}</div>
             
             <div className="font-semibold">Password:</div>
+<<<<<<< HEAD
+            <div className="col-span-2">{displayPassword}</div>
+=======
             <div className="col-span-2">{(voter as any).plainPassword || voter.username?.toLowerCase() || 'N/A'}</div>
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
             
             <div className="font-semibold">Serial #:</div>
             <div className="col-span-2">{voter.sequenceNumber || 'N/A'}</div>

@@ -1,0 +1,101 @@
+const { getSupabase } = require("../../config/supabase");
+const { mapFranchise, franchiseToRow } = require("./map");
+const { isUuid } = require("./users");
+
+async function create(data) {
+  const supabase = getSupabase();
+  const row = franchiseToRow(data);
+  row.created_at = new Date().toISOString();
+  row.updated_at = row.created_at;
+  if (!row.status) row.status = "active";
+
+  const { data: created, error } = await supabase.from("franchises").insert(row).select().single();
+  if (error) throw error;
+  return mapFranchise(created);
+}
+
+async function findById(id) {
+  if (!isUuid(id)) return null;
+  const supabase = getSupabase();
+  const { data, error } = await supabase.from("franchises").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return mapFranchise(data);
+}
+
+async function findByName(name) {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.from("franchises").select("*").eq("name", name).maybeSingle();
+  if (error) throw error;
+  return mapFranchise(data);
+}
+
+async function updateById(id, data) {
+  if (!isUuid(id)) return null;
+  const supabase = getSupabase();
+  const row = franchiseToRow(data);
+
+  const { data: updated, error } = await supabase
+    .from("franchises")
+    .update(row)
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return mapFranchise(updated);
+}
+
+async function deleteById(id) {
+  if (!isUuid(id)) return null;
+  const franchise = await findById(id);
+  if (!franchise) return null;
+
+  const supabase = getSupabase();
+  const { error } = await supabase.from("franchises").delete().eq("id", id);
+  if (error) throw error;
+  return franchise;
+}
+
+async function countDocuments() {
+  const supabase = getSupabase();
+  const { count, error } = await supabase
+    .from("franchises")
+    .select("id", { count: "exact", head: true });
+  if (error) throw error;
+  return count || 0;
+}
+
+async function findAll({ page, limit, franchiseId } = {}) {
+  const supabase = getSupabase();
+  let query = supabase.from("franchises").select("*", { count: page !== undefined ? "exact" : undefined });
+
+  if (franchiseId) query = query.eq("id", franchiseId);
+
+  if (page !== undefined) {
+    const pageNum = Math.max(page, 1);
+    const pageSize = Math.max(limit || 10, 1);
+    query = query.order("created_at", { ascending: false });
+    query = query.range((pageNum - 1) * pageSize, pageNum * pageSize - 1);
+  }
+
+  const { data, count, error } = await query;
+  if (error) throw error;
+  return { franchises: (data || []).map(mapFranchise), total: count };
+}
+
+async function findLean() {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.from("franchises").select("id, name");
+  if (error) throw error;
+  return (data || []).map((r) => ({ _id: r.id, id: r.id, name: r.name }));
+}
+
+module.exports = {
+  create,
+  findById,
+  findByName,
+  updateById,
+  deleteById,
+  countDocuments,
+  findAll,
+  findLean,
+};

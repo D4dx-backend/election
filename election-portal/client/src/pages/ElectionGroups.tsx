@@ -35,6 +35,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { extractApiList, normalizeEntityId } from "@/lib/apiHelpers";
+import { ElectionMultiPicker } from "@/components/elections/ElectionMultiPicker";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Pagination } from "@/lib/types";
 import {
@@ -57,6 +59,7 @@ interface ElectionGroupRecord {
   description?: string;
   franchiseId?: EntityRef;
   createdAt?: string | Date;
+  elections?: Array<string | number | { _id?: string; id?: string; title?: string }>;
 }
 
 interface FranchiseOption {
@@ -68,23 +71,30 @@ interface FranchiseOption {
 interface ElectionOption {
   _id?: string;
   id?: string | number;
+  title?: string;
+  organization?: string;
   franchiseId?: EntityRef;
   electionGroupId?: EntityRef;
 }
 
-interface AuthMeResponse {
-  user?: {
-    franchiseId?: string;
-    role?: string;
-  };
+interface AuthUser {
+  franchiseId?: string;
+  role?: string;
 }
 
 function getEntityId(value?: EntityRef): string {
-  if (value === undefined || value === null) return "";
-  if (typeof value === "object") {
-    return value._id?.toString() || value.toString();
-  }
-  return value.toString();
+  return normalizeEntityId(value);
+}
+
+function getGroupElectionIds(group: ElectionGroupRecord): string[] {
+  if (!Array.isArray(group.elections)) return [];
+  return group.elections
+    .map((e) =>
+      typeof e === "object" && e !== null
+        ? getEntityId(e._id ?? e.id)
+        : getEntityId(e)
+    )
+    .filter(Boolean);
 }
 
 export default function ElectionGroups() {
@@ -92,16 +102,22 @@ export default function ElectionGroups() {
   const [page, setPage] = useState(1);
   const pageSize = 10;
   // Get the user data to get franchiseId for admins
-  const { data: userData } = useQuery<AuthMeResponse>({ queryKey: ['/api/auth/me'] });
-  const userFranchiseId = userData?.user?.franchiseId;
-  const userRole = userData?.user?.role;
+  const { data: userData } = useQuery<AuthUser>({ queryKey: ['/api/auth/me'] });
+  const userFranchiseId = userData?.franchiseId;
+  const userRole = userData?.role;
 
   const [createFormData, setCreateFormData] = useState({
     name: '',
     description: '',
     franchiseId: ''
   });
-  const [editFormData, setEditFormData] = useState({ id: '', name: '', description: '' });
+  const [createElectionIds, setCreateElectionIds] = useState<string[]>([]);
+  const [editFormData, setEditFormData] = useState({
+    id: '',
+    name: '',
+    description: '',
+    elections: [] as string[],
+  });
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
   const { toast } = useToast();
@@ -121,70 +137,54 @@ export default function ElectionGroups() {
     placeholderData: (prev) => prev,
   });
   
-  // Extract the actual groups from the response
-  const electionGroupsData = electionGroupsRawData?.data || [];
-  const electionGroupsPagination = electionGroupsRawData?.pagination;
-
-  // Fetch franchises with proper response handling
   const {
     data: franchisesRawData,
     isLoading: franchisesLoading,
     isError: franchisesError
-  } = useQuery<{ data: FranchiseOption[] }>({
-    queryKey: ['/api/franchises']
+  } = useQuery({
+    queryKey: ['/api/franchises'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/franchises');
+      return res.json();
+    },
   });
-  
-  // Extract franchises from response
-  const franchisesData = franchisesRawData?.data || [];
 
-  // Fetch elections with proper response handling
   const {
     data: electionsRawData,
     isLoading: electionsLoading,
     isError: electionsError
-  } = useQuery<{ data: ElectionOption[] }>({
-    queryKey: ['/api/elections']
-  });
-  
-  // Extract elections from response
-  const electionsData = electionsRawData?.data || [];
-
-  // Now we need to get the data from the raw response
-  // The API returns the data in the raw response directly as an array
-  const allElectionGroups = electionGroupsRawData?.data || [];
-  const franchises = franchisesRawData?.data || [];
-  const elections = electionsRawData?.data || [];
-  
-  // Filter election groups based on user role and franchise
-  const electionGroups = userRole === 'franchise_admin'
-    ? allElectionGroups.filter(group => {
-        const groupFranchiseId = getEntityId(group.franchiseId);
-        return groupFranchiseId === userFranchiseId;
-      })
-    : allElectionGroups;
-    
-  // Add complete debugging info to understand data structure
-  console.log("Election Groups Raw:", electionGroupsRawData);
-  console.log("Election Groups Data:", electionGroupsData);
-  console.log("Franchises Raw:", franchisesRawData);
-  console.log("Franchises Data:", franchisesData);
-  console.log("Elections Raw:", electionsRawData);
-  console.log("Elections Data:", electionsData);
-  
-  console.log("Filtered Election Groups:", electionGroups);
-
-  console.log('Election Groups Data:', {
-    allGroups: allElectionGroups,
-    filtered: electionGroups,
-    userRole,
-    userFranchiseId
+  } = useQuery({
+    queryKey: ['/api/elections'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/elections');
+      return res.json();
+    },
   });
 
-  console.log('Election Groups:', electionGroups); // Debug log
+  const allElectionGroups = extractApiList<ElectionGroupRecord>(electionGroupsRawData);
+  const franchises = extractApiList<FranchiseOption>(franchisesRawData);
+  const elections = extractApiList<ElectionOption>(electionsRawData);
+  const electionGroups = allElectionGroups;
+
+  const electionGroupsPagination = electionGroupsRawData?.pagination;
+
+  const createFranchiseId =
+    userRole === 'super_admin'
+      ? createFormData.franchiseId
+      : userFranchiseId;
+
+  const electionsForCreate = createFranchiseId
+    ? elections.filter((e) => getEntityId(e.franchiseId) === createFranchiseId)
+    : elections;
 
   // Create mutation
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; description: string; franchiseId?: string }) => {
+    mutationFn: async (data: {
+      name: string;
+      description: string;
+      franchiseId?: string;
+      elections: string[];
+    }) => {
        return await apiRequest('POST', '/api/election-groups', data);
     },
     onSuccess: () => {
@@ -194,7 +194,10 @@ export default function ElectionGroups() {
         variant: "success"
       });
       setOpen(false);
+      setCreateFormData({ name: '', description: '', franchiseId: '' });
+      setCreateElectionIds([]);
       queryClient.invalidateQueries({ queryKey: ['/api/election-groups'] });
+      refetchElectionGroups();
     },
     onError: (error) => {
       toast({
@@ -207,9 +210,14 @@ export default function ElectionGroups() {
 
   // Edit mutation
   const editMutation = useMutation({
-    mutationFn: async (data: { id: string; name: string; description: string }) => {
+    mutationFn: async (data: {
+      id: string;
+      name: string;
+      description: string;
+      elections: string[];
+    }) => {
       const { id, ...updateData } = data;
-      return await apiRequest('PATCH', `/api/election-groups/${id}`, updateData);
+      return await apiRequest('PUT', `/api/election-groups/${id}`, updateData);
     },
     onSuccess: () => {
       toast({
@@ -218,8 +226,9 @@ export default function ElectionGroups() {
         variant: "success"
       });
       setIsEditOpen(false);
-      setEditFormData({ id: '', name: '', description: '' });
+      setEditFormData({ id: '', name: '', description: '', elections: [] });
       queryClient.invalidateQueries({ queryKey: ['/api/election-groups'] });
+      refetchElectionGroups();
     },
     onError: (error) => {
       toast({
@@ -258,15 +267,21 @@ export default function ElectionGroups() {
     e.preventDefault();
 
     // Prepare data to submit
-    let dataToSubmit: { name: string; description: string; franchiseId?: string } = {
+    let dataToSubmit: {
+      name: string;
+      description: string;
+      franchiseId?: string;
+      elections: string[];
+    } = {
       name: createFormData.name,
-      description: createFormData.description
+      description: createFormData.description,
+      elections: createElectionIds,
     };
 
-    // For franchise admin, use their franchiseId
-    if (userRole === 'franchise_admin' && userFranchiseId) {
+    // For franchise admin or election admin, use their franchiseId
+    if ((userRole === 'franchise_admin' || userRole === 'election_admin') && userFranchiseId) {
       dataToSubmit.franchiseId = userFranchiseId;
-    } 
+    }
     // For super admin, require franchise selection
     else if (userRole === 'super_admin') {
       if (!createFormData.franchiseId) {
@@ -293,11 +308,21 @@ export default function ElectionGroups() {
       setEditFormData({
         id,
         name: group.name,
-        description: group.description || ''
+        description: group.description || '',
+        elections: getGroupElectionIds(group),
       });
       setIsEditOpen(true);
     }
   };
+
+  const editFranchiseId = (() => {
+    const group = electionGroups.find((g) => getEntityId(g._id ?? g.id) === editFormData.id);
+    return group ? getEntityId(group.franchiseId) : userFranchiseId;
+  })();
+
+  const electionsForEdit = editFranchiseId
+    ? elections.filter((e) => getEntityId(e.franchiseId) === editFranchiseId)
+    : elections;
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -314,13 +339,7 @@ export default function ElectionGroups() {
     }
   };
 
-  // Count elections in each group
-  const getElectionCount = (groupId: string) => {
-    return elections?.filter(e => {
-      const eGroupId = getEntityId(e.electionGroupId);
-      return eGroupId === groupId;
-    }).length || 0;
-  };
+  const getElectionCount = (group: ElectionGroupRecord) => getGroupElectionIds(group).length;
 
   // Get franchise name
   const getFranchiseName = (franchiseId: string) => {
@@ -343,19 +362,25 @@ export default function ElectionGroups() {
           <p className="text-sm text-gray-600">Organize and manage election groups</p>
         </div>
         <div className="mt-4 sm:mt-0">
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(o) => {
+            setOpen(o);
+            if (!o) {
+              setCreateElectionIds([]);
+              setCreateFormData({ name: '', description: '', franchiseId: '' });
+            }
+          }}>
             <DialogTrigger asChild>
               <Button>
                 <PlusIcon className="h-4 w-4 mr-2" />
                 Create Group
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-lg">
               <form onSubmit={handleCreateGroup}>
                 <DialogHeader>
                   <DialogTitle>Create Election Group</DialogTitle>
                   <DialogDescription>
-                    Create a new group to organize multiple elections together.
+                    Create a group and add elections to it. You can change elections later via Edit.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
@@ -385,7 +410,6 @@ export default function ElectionGroups() {
                     />
                   </div>
 
-                  {/* Only show franchise selection for super_admin users */}
                   {userRole === 'super_admin' && (
                     <div className="grid grid-cols-4 items-center gap-4">
                       <Label htmlFor="franchiseId" className="text-right">
@@ -393,7 +417,10 @@ export default function ElectionGroups() {
                       </Label>
                       <Select
                         value={createFormData.franchiseId}
-                        onValueChange={(value) => setCreateFormData({ ...createFormData, franchiseId: value })}
+                        onValueChange={(value) => {
+                          setCreateFormData({ ...createFormData, franchiseId: value });
+                          setCreateElectionIds([]);
+                        }}
                       >
                         <SelectTrigger className="col-span-3">
                           <SelectValue placeholder="Select a franchise" />
@@ -411,6 +438,26 @@ export default function ElectionGroups() {
                       </Select>
                     </div>
                   )}
+
+                  <div className="space-y-2">
+                    <Label>Elections in this group</Label>
+                    <p className="text-xs text-gray-500">
+                      {createElectionIds.length > 0
+                        ? `${createElectionIds.length} selected`
+                        : "Optional — select elections to include now"}
+                    </p>
+                    {userRole === 'super_admin' && !createFormData.franchiseId ? (
+                      <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
+                        Select a franchise first to see its elections.
+                      </p>
+                    ) : (
+                      <ElectionMultiPicker
+                        elections={electionsForCreate}
+                        selectedIds={createElectionIds}
+                        onChange={setCreateElectionIds}
+                      />
+                    )}
+                  </div>
                 </div>
                 <DialogFooter>
                   <Button
@@ -434,13 +481,16 @@ export default function ElectionGroups() {
       </div>
 
       {/* Edit Election Group Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent>
+      <Dialog open={isEditOpen} onOpenChange={(o) => {
+        setIsEditOpen(o);
+        if (!o) setEditFormData({ id: '', name: '', description: '', elections: [] });
+      }}>
+        <DialogContent className="max-w-lg">
           <form onSubmit={handleEditSubmit}>
             <DialogHeader>
               <DialogTitle>Edit Election Group</DialogTitle>
               <DialogDescription>
-                Update the details of this election group.
+                Update the group details and manage which elections belong to it.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -467,6 +517,19 @@ export default function ElectionGroups() {
                   className="col-span-3"
                   value={editFormData.description}
                   onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Elections in this group</Label>
+                <p className="text-xs text-gray-500">
+                  {editFormData.elections.length > 0
+                    ? `${editFormData.elections.length} selected`
+                    : "No elections selected"}
+                </p>
+                <ElectionMultiPicker
+                  elections={electionsForEdit}
+                  selectedIds={editFormData.elections}
+                  onChange={(ids) => setEditFormData({ ...editFormData, elections: ids })}
                 />
               </div>
             </div>
@@ -559,6 +622,12 @@ export default function ElectionGroups() {
                           <p className="font-medium text-gray-900 truncate">{franchise?.name || 'Unknown franchise'}</p>
                         </div>
                         <div>
+                          <p className="text-xs text-gray-500">Elections</p>
+                          <p className="font-medium text-gray-900">
+                            {getElectionCount(group)} election{getElectionCount(group) !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+                        <div>
                           <p className="text-xs text-gray-500">Created</p>
                           <p className="font-medium text-gray-900">
                             {group.createdAt ? new Date(group.createdAt).toLocaleDateString() : 'Not available'}
@@ -588,6 +657,7 @@ export default function ElectionGroups() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Description</TableHead>
+                    <TableHead>Elections</TableHead>
                     <TableHead>Franchise</TableHead>
                     <TableHead>Created At</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -608,6 +678,15 @@ export default function ElectionGroups() {
                       <TableRow key={groupId}>
                         <TableCell className="font-medium">{group.name}</TableCell>
                         <TableCell>{group.description || 'No description'}</TableCell>
+                        <TableCell>
+                          {getElectionCount(group) > 0 ? (
+                            <span className="text-sm text-gray-700">
+                              {getElectionCount(group)} election{getElectionCount(group) !== 1 ? "s" : ""}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-gray-400">None</span>
+                          )}
+                        </TableCell>
                         <TableCell>{franchise?.name || 'Unknown franchise'}</TableCell>
                         <TableCell>
                           {group.createdAt ?

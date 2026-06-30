@@ -1,4 +1,4 @@
-import { UserCircle, Bell, Menu, ChevronDown, LogOut, UserCog, User, Shield, HelpCircle } from "lucide-react";
+import { Menu, ChevronDown, LogOut, UserCog, User, Shield, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
@@ -11,7 +11,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
+import { Link, useLocation } from "wouter";
 import { HelpDialog } from "@/components/help/HelpDialog";
+import { NotificationBell } from "@/components/layout/NotificationBell";
 
 interface HeaderProps {
   toggleSidebar: () => void;
@@ -91,10 +93,7 @@ export function Header({ toggleSidebar, user }: HeaderProps) {
           
           {/* Notifications */}
           <div className="relative mr-2">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              <span className="absolute top-1 right-1 bg-red-500 rounded-full w-2 h-2"></span>
-            </Button>
+            <NotificationBell />
           </div>
 
           {/* User menu */}
@@ -123,13 +122,17 @@ export function Header({ toggleSidebar, user }: HeaderProps) {
                 {user.displayRole || user.role}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <User className="h-4 w-4 mr-2" />
-                Profile
+              <DropdownMenuItem asChild>
+                <Link href="/profile" className="flex items-center cursor-pointer">
+                  <User className="h-4 w-4 mr-2" />
+                  Profile
+                </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <UserCog className="h-4 w-4 mr-2" />
-                Settings
+              <DropdownMenuItem asChild>
+                <Link href="/settings" className="flex items-center cursor-pointer">
+                  <UserCog className="h-4 w-4 mr-2" />
+                  Settings
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleHelpClick}>
                 <HelpCircle className="h-4 w-4 mr-2" />

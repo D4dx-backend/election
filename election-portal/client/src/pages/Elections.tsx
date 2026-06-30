@@ -103,14 +103,15 @@ export default function Elections() {
 
   const handleStatusChange = async (id: string, newStatus: 'draft' | 'active' | 'completed' | 'archived') => {
     try {
-      await fetch(`/api/elections/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
-        body: JSON.stringify({ status: newStatus })
-      });
+      // Use apiRequest so a non-2xx response actually throws (the old raw fetch
+      // swallowed errors and showed "success" even when nothing changed).
+      // Making an election active also opens it for voting; completing or
+      // archiving closes voting.
+      const payload: Record<string, unknown> = { status: newStatus };
+      if (newStatus === 'active') payload.votingOpen = true;
+      if (newStatus === 'completed' || newStatus === 'archived') payload.votingOpen = false;
+
+      await apiRequest('PUT', `/api/elections/${id}`, payload);
 
       // Refetch elections
       queryClient.invalidateQueries({ queryKey: ['/api/elections'] });
@@ -124,7 +125,7 @@ export default function Elections() {
       console.error('Error updating status:', error);
       toast({
         title: "Error",
-        description: "Failed to update election status.",
+        description: error instanceof Error ? error.message : "Failed to update election status.",
         variant: "destructive"
       });
     }

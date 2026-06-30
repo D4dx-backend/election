@@ -7,22 +7,24 @@ const {
   deleteElectionAnalytics,
   getDashboardStats        // Aggregated dashboard statistics
 } = require("../controllers/electionAnalytics"); // Ensure this path is correct
-const { protect } = require("../middleware/auth"); // Ensure this path is correct and auth.js exports protect
+const { protect, authorize } = require("../middleware/auth"); // Ensure this path is correct and auth.js exports protect
+
+const admin = authorize("super_admin", "franchise_admin", "election_admin");
 
 // Aggregated dashboard statistics (must be declared before "/:id")
-router.get("/dashboard", protect, getDashboardStats);
+router.get("/dashboard", protect, admin, getDashboardStats);
 
 // Routes for the collection (e.g., /api/v1/election-analytics)
 router
   .route("/")
-  .post(protect, addElectionAnalytics)
-  .get(protect, getElectionAnalytics);
+  .post(protect, admin, addElectionAnalytics)
+  .get(protect, admin, getElectionAnalytics);
 
 // Routes for a specific item by ID (e.g., /api/v1/election-analytics/:id)
 router
   .route("/:id")
-  .get(protect, getElectionAnalytic)    // GET a single item
-  .put(protect, updateElectionAnalytics)  // UPDATE a single item
-  .delete(protect, deleteElectionAnalytics); // DELETE a single item
+  .get(protect, admin, getElectionAnalytic)    // GET a single item
+  .put(protect, admin, updateElectionAnalytics)  // UPDATE a single item
+  .delete(protect, admin, deleteElectionAnalytics); // DELETE a single item
 
 module.exports = router;

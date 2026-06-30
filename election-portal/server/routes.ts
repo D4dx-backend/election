@@ -66,6 +66,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Onboarding → /api/v1/onboarding
   app.use("/api/onboarding", makeProxy("/api/v1/onboarding"));
 
+  // Notifications → /api/v1/notifications
+  app.use("/api/notifications", makeProxy("/api/v1/notifications"));
+
   // Uploaded images (franchise logos, election banners) served by the backend
   app.use("/uploads", makeProxy("/uploads"));
 

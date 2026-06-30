@@ -1,15 +1,8 @@
-const User = require("../model/User");
+const users = require("../lib/supabase/users");
 
-// @desc    Complete user onboarding
-// @route   POST /api/v1/onboarding/complete
-// @access  Private
 exports.completeOnboarding = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      { onboardingCompleted: true },
-      { new: true }
-    ).select("-password");
+    const user = await users.updateById(req.user._id, { onboardingCompleted: true });
 
     if (!user) return res.status(404).json({ success: false, message: "User not found." });
 
@@ -23,12 +16,9 @@ exports.completeOnboarding = async (req, res) => {
   }
 };
 
-// @desc    Get onboarding status
-// @route   GET /api/v1/onboarding/status
-// @access  Private
 exports.getOnboardingStatus = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("onboardingCompleted");
+    const user = await users.findById(req.user._id, { includePassword: false });
     if (!user) return res.status(404).json({ success: false, message: "User not found." });
     res.status(200).json({ success: true, data: { onboardingCompleted: user.onboardingCompleted } });
   } catch (err) {

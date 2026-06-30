@@ -5,7 +5,6 @@ const cors = require("cors");
 const connectDB = require("./config/db.js");
 const { handleError } = require("./utils/errorLog.js");
 const path = require("path");
-// Load env vars
 const swaggerUi = require("swagger-ui-express");
 const swaggerDocument = require("./swagger-output.json");
 const app = express();
@@ -23,12 +22,11 @@ const allowedOrigins = [
     : []),
 ];
 
-//cors policy
 app.use(
   cors({
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) === -1 && !(/\.(woff|woff2|ttf|otf|eot)$/.test(origin))) {
+      if (allowedOrigins.indexOf(origin) === -1) {
         const msg = "The CORS policy for this site does not allow access from the specified Origin.";
         return callback(new Error(msg), false);
       }
@@ -62,6 +60,7 @@ const vote = require("./routes/vote.js");
 const voterGroup = require("./routes/voterGroup.js");
 const auth = require("./routes/auth.js");
 const onboarding = require("./routes/onboarding.js");
+const notifications = require("./routes/notifications.js");
 
 
 app.use("/api/v1/auth", auth);
@@ -75,14 +74,30 @@ app.use("/api/v1/nominee", nominee);
 app.use("/api/v1/vote", vote);
 app.use("/api/v1/voterGroup", voterGroup);
 app.use("/api/v1/onboarding", onboarding);
+app.use("/api/v1/notifications", notifications);
 
 // --- Centralized Error Handling --- MUST BE THE LAST MIDDLEWARE
 app.use(handleError);
 
 const PORT = process.env.PORT || 8000;
 
+<<<<<<< HEAD
+async function startServer() {
+  try {
+    await connectDB();
+    app.listen(PORT, () => console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Startup failed: ${message}`);
+    process.exit(1);
+  }
+}
+
+startServer();
+=======
 // Connect to DB first, then start listening — ensures migrations run before requests arrive
 (async () => {
   await connectDB();
   app.listen(PORT, () => console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`));
 })();
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3

@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+const voterGroups = require("../lib/supabase/voterGroups");
+const { logUserActivity } = require("../utils/auditLog");
+
+=======
 const VoterGroup = require("../model/VoterGroup");
 const User = require("../model/User");
 const bcrypt = require("bcryptjs");
@@ -13,58 +18,94 @@ function generateRandomPassword(length = 8) {
 // @desc      ADD VOTER GROUP
 // @route     POST /api/v1/voter-groups
 // @access    public
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
 exports.addVoterGroup = async (req, res) => {
   try {
-    const voterGroup = await VoterGroup.create(req.body);
+    const voterGroup = await voterGroups.create(req.body);
+    await voterGroups.syncGroupVotersAccess(voterGroup);
     await logUserActivity(req.user._id, req.ip, "Created", voterGroup.name, "Voter Group");
-    res.status(201).json({ success: true, message: 'Voter Group created.', voterGroup });
+    res.status(201).json({ success: true, message: "Voter Group created.", voterGroup });
   } catch (err) {
     console.error(err);
-    errorLog(req, err);
     res.status(500).json({ success: false, message: err.toString() });
   }
 };
 
-// Implement other CRUD operations similarly...
-
 exports.getVoterGroupById = async (req, res) => {
   try {
-    const vg = await VoterGroup.findById(req.params.id);
-    if (!vg) return res.status(404).json({ success: false, message: 'Voter Group not found.' });
+    const vg = await voterGroups.findById(req.params.id, {
+      populateElections: true,
+      populateVoters: true,
+    });
+    if (!vg) return res.status(404).json({ success: false, message: "Voter Group not found." });
     res.status(200).json({ success: true, data: vg });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
 };
 
 exports.updateVoterGroupById = async (req, res) => {
   try {
-    const vg = await VoterGroup.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!vg) return res.status(404).json({ success: false, message: 'Voter Group not found.' });
+    const vg = await voterGroups.updateById(req.params.id, req.body);
+    if (!vg) return res.status(404).json({ success: false, message: "Voter Group not found." });
+    await voterGroups.syncGroupVotersAccess(vg);
     res.status(200).json({ success: true, data: vg });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
+exports.addVotersToGroup = async (req, res) => {
+  try {
+    const { voterIds } = req.body;
+    if (!Array.isArray(voterIds) || voterIds.length === 0) {
+      return res.status(400).json({ success: false, message: "voterIds must be a non-empty array." });
+    }
+    const vg = await voterGroups.addVotersToGroup(req.params.id, voterIds);
+    if (!vg) return res.status(404).json({ success: false, message: "Voter Group not found." });
+    await logUserActivity(req.user._id, req.ip, "Added voters to", vg.name, "Voter Group");
+    res.status(200).json({ success: true, data: vg });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
+exports.removeVotersFromGroup = async (req, res) => {
+  try {
+    const { voterIds } = req.body;
+    if (!Array.isArray(voterIds) || voterIds.length === 0) {
+      return res.status(400).json({ success: false, message: "voterIds must be a non-empty array." });
+    }
+    const vg = await voterGroups.removeVotersFromGroup(req.params.id, voterIds);
+    if (!vg) return res.status(404).json({ success: false, message: "Voter Group not found." });
+    await logUserActivity(req.user._id, req.ip, "Removed voters from", vg.name, "Voter Group");
+    res.status(200).json({ success: true, data: vg });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
 };
 
 exports.deleteVoterGroupById = async (req, res) => {
   try {
-    const vg = await VoterGroup.findByIdAndDelete(req.params.id);
-    if (!vg) return res.status(404).json({ success: false, message: 'Voter Group not found.' });
-    res.status(200).json({ success: true, message: 'Voter Group deleted.' });
-  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+    const vg = await voterGroups.deleteById(req.params.id);
+    if (!vg) return res.status(404).json({ success: false, message: "Voter Group not found." });
+    res.status(200).json({ success: true, message: "Voter Group deleted." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
 };
 
-// @desc      GET ALL VOTER GROUPS
-// @route     GET /api/v1/voterGroup
-// @access    Protected
 exports.getVoterGroups = async (req, res) => {
   try {
-    // Opt-in server-side pagination (only when ?page is provided)
     if (req.query.page !== undefined) {
       const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
       const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
-      const total = await VoterGroup.countDocuments();
-      const paged = await VoterGroup.find()
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit);
+      const { groups: paged, total } = await voterGroups.findAll({ page, limit, populateElections: true });
       const totalPages = Math.max(Math.ceil(total / limit), 1);
       return res.status(200).json({
         success: true,
@@ -74,23 +115,20 @@ exports.getVoterGroups = async (req, res) => {
       });
     }
 
-    const voterGroups = await VoterGroup.find();
-    res.status(200).json({ success: true, count: voterGroups.length, data: voterGroups });
+    const { groups: voterGroupsList } = await voterGroups.findAll({ populateElections: true });
+    res.status(200).json({ success: true, count: voterGroupsList.length, data: voterGroupsList });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });
   }
 };
 
-// @desc      UPDATE VOTER GROUP
-// @route     PUT /api/v1/voterGroup
-// @access    Protected
 exports.updateVoterGroup = async (req, res) => {
   try {
     const { id } = req.body;
-    const voterGroup = await VoterGroup.findByIdAndUpdate(id, req.body, { new: true });
+    const voterGroup = await voterGroups.updateById(id, req.body);
     if (!voterGroup) {
-      return res.status(404).json({ success: false, message: 'Voter Group not found.' });
+      return res.status(404).json({ success: false, message: "Voter Group not found." });
     }
     res.status(200).json({ success: true, data: voterGroup });
   } catch (err) {
@@ -99,17 +137,14 @@ exports.updateVoterGroup = async (req, res) => {
   }
 };
 
-// @desc      DELETE VOTER GROUP
-// @route     DELETE /api/v1/voterGroup
-// @access    Protected
 exports.deleteVoterGroup = async (req, res) => {
   try {
     const { id } = req.query;
-    const voterGroup = await VoterGroup.findByIdAndDelete(id);
+    const voterGroup = await voterGroups.deleteById(id);
     if (!voterGroup) {
-      return res.status(404).json({ success: false, message: 'Voter Group not found.' });
+      return res.status(404).json({ success: false, message: "Voter Group not found." });
     }
-    res.status(200).json({ success: true, message: 'Voter Group deleted.' });
+    res.status(200).json({ success: true, message: "Voter Group deleted." });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });

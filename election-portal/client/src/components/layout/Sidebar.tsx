@@ -2,18 +2,20 @@ import { Link, useLocation } from "wouter";
 import { cloneElement, isValidElement } from "react";
 import type { ReactElement } from "react";
 import { cn } from "@/lib/utils";
-import { 
-  LayoutDashboard, 
-  Building, 
-  Vote, 
-  Users, 
-  User, 
-  Folder, 
-  BarChart, 
+import {
+  LayoutDashboard,
+  Building,
+  Vote,
+  Users,
+  UserPlus,
+  Folder,
+  BarChart3,
   FileText,
   Settings,
   History,
-  UserPlus
+  UserCog,
+  User,
+  ClipboardList,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -21,21 +23,25 @@ interface SidebarProps {
   userRole?: string;
 }
 
-export function Sidebar({ isOpen, userRole = '' }: SidebarProps) {
+export function Sidebar({ isOpen, userRole = "" }: SidebarProps) {
   const [location] = useLocation();
 
-  const isActive = (path: string) => {
-    return location === path;
-  };
-  
-  const isSuperAdmin = userRole === 'super_admin';
-  const isFranchiseAdmin = userRole === 'franchise_admin';
-  const isElectionAdmin = userRole === 'election_admin';
-  const isVoter = userRole === 'voter';
+  const isActive = (path: string) => location === path;
 
-  // Create a custom NavLink component. Uses wouter's Link for instant,
-  // client-side navigation (no full page reload) — faster on mobile.
-  const NavLink = ({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) => {
+  const isSuperAdmin = userRole === "super_admin";
+  const isFranchiseAdmin = userRole === "franchise_admin";
+  const isElectionAdmin = userRole === "election_admin";
+  const isVoter = userRole === "voter";
+
+  const NavLink = ({
+    href,
+    icon,
+    label,
+  }: {
+    href: string;
+    icon: React.ReactNode;
+    label: string;
+  }) => {
     const active = isActive(href);
     return (
       <Link
@@ -60,77 +66,89 @@ export function Sidebar({ isOpen, userRole = '' }: SidebarProps) {
     );
   };
 
-  // If user is a voter, show a simplified menu
+  // ── Voter: single-item menu ──
   if (isVoter) {
     return (
-      <aside 
+      <aside
         className={cn(
           "sidebar scrollbar-thin fixed top-16 left-0 bottom-0 w-64 bg-white border-r border-slate-200/80 overflow-y-auto z-20 transition-transform duration-300",
           !isOpen && "transform -translate-x-full lg:translate-x-0"
         )}
       >
-        <nav className="mt-4">
-          <div className="px-4 py-2">
-            <NavLink 
-              href="/voting" 
-              icon={<Vote className="mr-3 h-5 w-5 text-gray-600" />} 
-              label="Cast Vote" 
-            />
-          </div>
+        <nav className="mt-4 px-4 py-2">
+          <NavLink href="/voting" icon={<Vote />} label="Cast Vote" />
         </nav>
       </aside>
     );
   }
 
   return (
-    <aside 
+    <aside
       className={cn(
         "sidebar scrollbar-thin fixed top-16 left-0 bottom-0 w-64 bg-white border-r border-slate-200/80 overflow-y-auto z-20 transition-transform duration-300",
         !isOpen && "transform -translate-x-full lg:translate-x-0"
       )}
     >
-      <nav className="mt-4">
+      <nav className="mt-4 space-y-0.5">
+
+        {/* ── Section: Core (all admin roles) ── */}
         <div className="px-4 py-2">
-          <NavLink 
-            href="/" 
-            icon={<LayoutDashboard className="mr-3 h-5 w-5 text-gray-600" />} 
-            label="Dashboard" 
-          />
-          {/* Super admin keeps a simple top-level menu (franchises + admins); elections are managed by franchise/election admins */}
-          {!isSuperAdmin && (
-            <NavLink 
-              href="/elections" 
-              icon={<Vote className="mr-3 h-5 w-5 text-gray-600" />} 
-              label="Elections" 
-            />
-          )}
-          {/* Only super admin manages franchises at the top level */}
-          {isSuperAdmin && (
-            <NavLink 
-              href="/franchises" 
-              icon={<Building className="mr-3 h-5 w-5 text-gray-600" />} 
-              label="Franchises" 
-            />
-          )}
+          <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            Overview
+          </p>
+          <NavLink href="/" icon={<LayoutDashboard />} label="Dashboard" />
         </div>
 
+        {/* ── Super Admin section ── */}
         {isSuperAdmin && (
           <div className="px-4 py-2">
-            <NavLink 
-              href="/audit-logs" 
-              icon={<History className="mr-3 h-5 w-5 text-gray-600" />} 
-              label="Audit Logs" 
-            />
+            <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              Administration
+            </p>
+            <NavLink href="/franchises" icon={<Building />} label="Franchises" />
+            <NavLink href="/admins" icon={<UserCog />} label="Admins" />
+            <NavLink href="/audit-logs" icon={<History />} label="Audit Logs" />
           </div>
         )}
 
+        {/* ── Franchise Admin & Election Admin sections ── */}
+        {(isFranchiseAdmin || isElectionAdmin) && (
+          <>
+            <div className="px-4 py-2">
+              <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                Elections
+              </p>
+              <NavLink href="/elections" icon={<Vote />} label="Elections" />
+              {isFranchiseAdmin && (
+                <NavLink href="/election-groups" icon={<Folder />} label="Election Groups" />
+              )}
+            </div>
+
+            <div className="px-4 py-2">
+              <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                People
+              </p>
+              <NavLink href="/nominees" icon={<ClipboardList />} label="Nominees" />
+              <NavLink href="/voters" icon={<Users />} label="Voters" />
+              <NavLink href="/voter-groups" icon={<UserPlus />} label="Voter Groups" />
+            </div>
+
+            <div className="px-4 py-2">
+              <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                Insights
+              </p>
+              <NavLink href="/analytics" icon={<BarChart3 />} label="Analytics" />
+              <NavLink href="/reports" icon={<FileText />} label="Reports" />
+            </div>
+          </>
+        )}
+
+        {/* ── Account (all admin roles) ── */}
         <div className="px-4 py-2">
-          <NavLink 
-            href="/settings" 
-            icon={<Settings className="mr-3 h-5 w-5 text-gray-600" />} 
-            label="Settings" 
-          />
+          <NavLink href="/profile" icon={<User />} label="Profile" />
+          <NavLink href="/settings" icon={<Settings />} label="Settings" />
         </div>
+
       </nav>
     </aside>
   );

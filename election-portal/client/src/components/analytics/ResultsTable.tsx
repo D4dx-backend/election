@@ -54,7 +54,7 @@ export function ResultsTable({
         </div>
 
         <div className="divide-y divide-gray-100 md:hidden">
-          {nominees.map((nominee, index) => {
+          {sortedNominees.map((nominee, index) => {
             const isElected = index < numberToBeElected;
             const nomineeId = (nominee as NomineeWithVotes & { _id?: string })._id || nominee.id;
             return (
