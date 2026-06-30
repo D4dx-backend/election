@@ -39,13 +39,29 @@ export default function Dashboard() {
 
   // Fetch recent elections from API
   const {
-    data: recentElections,
+    data: electionsResponse,
     isLoading: electionsLoading,
     isError: electionsError,
     error: electionsFetchError,
-  } = useQuery<ElectionWithDetails[]>({
+  } = useQuery<{ data?: ElectionWithDetails[]; success?: boolean }>({
     queryKey: ['/api/elections'],
+    queryFn: async () => {
+      const res = await fetch('/api/elections', {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        },
+      });
+      if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+      return res.json();
+    },
   });
+
+  // Safely extract array regardless of response shape
+  const recentElections: ElectionWithDetails[] = Array.isArray(electionsResponse)
+    ? electionsResponse
+    : Array.isArray(electionsResponse?.data)
+    ? electionsResponse.data
+    : [];
 
   useEffect(() => {
     if (statsError) {
@@ -71,7 +87,7 @@ export default function Dashboard() {
 
   // Use actual data if available, fall back to mock data if needed
   const displayStats = stats || mockDashboardStats;
-  const displayElections = recentElections ? recentElections.slice(0, 3) : getRecentElections(3);
+  const displayElections = recentElections.length > 0 ? recentElections.slice(0, 3) : getRecentElections(3);
 
   useEffect(() => {
     document.title = "Dashboard | Vote+";
@@ -80,15 +96,15 @@ export default function Dashboard() {
   return (
     <MainLayout>
       <div>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <div className="mb-4">
+          <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-sm text-gray-600">
             {user ? `Welcome, ${user.fullName || user.username}` : 'Overview of all election activities'}
           </p>
         </div>
 
         {/* Stats Overview */}
-        <div className="grid grid-cols-3 gap-2 sm:gap-4 md:gap-6 mb-6">
+        <div className="grid grid-cols-3 gap-3 mb-4">
           {statsLoading ? (
             <>
               <Skeleton className="h-24 w-full md:h-28" />

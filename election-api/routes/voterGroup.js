@@ -5,6 +5,7 @@ const {
   getVoterGroupById,
   updateVoterGroupById,
   deleteVoterGroupById,
+<<<<<<< HEAD
   addVotersToGroup,
   removeVotersFromGroup,
 } = require("../controllers/voterGroup");
@@ -25,5 +26,22 @@ router
   .get(protect, admin, getVoterGroupById)
   .put(protect, admin, updateVoterGroupById)
   .delete(protect, admin, deleteVoterGroupById);
+=======
+  assignElections,
+  getGroupVoters,
+  addVoterToGroup,
+  generateVotersInGroup,
+  addExistingUsersToGroup,
+} = require("../controllers/voterGroup");
+const { protect } = require("../middleware/auth");
+
+router.route("/").post(protect, addVoterGroup).get(protect, getVoterGroups);
+router.route("/:id").get(protect, getVoterGroupById).put(protect, updateVoterGroupById).delete(protect, deleteVoterGroupById);
+router.route("/:id/elections").put(protect, assignElections);
+router.route("/:id/voters").get(protect, getGroupVoters);
+router.route("/:id/voter").post(protect, addVoterToGroup);
+router.route("/:id/generate").post(protect, generateVotersInGroup);
+router.route("/:id/add-users").post(protect, addExistingUsersToGroup);
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
 
 module.exports = router;

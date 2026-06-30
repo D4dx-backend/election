@@ -6,8 +6,12 @@ import { VotersTable } from "@/components/voters/VotersTable";
 import { BulkVoterSlipPrinter } from "@/components/voters/BulkVoterSlipPrinter";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+<<<<<<< HEAD
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlusIcon, Upload, AlertCircle, UsersRound, Search, UserPlus, UserCheck } from "lucide-react";
+=======
+import { PlusIcon, Upload, AlertCircle, UsersRound, Search, UserPlus } from "lucide-react";
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
 import { BulkVoterGenerationOptions, Pagination, User, Election, ElectionGroup } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -97,7 +101,14 @@ export default function Voters({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedElectionId, setSelectedElectionId] = useState<string>(electionId || "all");
   const [createVoterOpen, setCreateVoterOpen] = useState(false);
+<<<<<<< HEAD
   const [addVoterTab, setAddVoterTab] = useState<"create" | "existing">("create");
+=======
+  const [createVoterMode, setCreateVoterMode] = useState<'choice' | 'existing' | 'new'>('choice');
+  const [existingVoterSearch, setExistingVoterSearch] = useState("");
+  const [selectedExistingVoterIds, setSelectedExistingVoterIds] = useState<string[]>([]);
+  const [existingVoterElectionId, setExistingVoterElectionId] = useState(electionId || "");
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
   const [bulkVoterOpen, setBulkVoterOpen] = useState(false);
 
   // ── Create-new form state ────────────────────────────────────────────────
@@ -152,6 +163,7 @@ export default function Voters({
       const response = await apiRequest("GET", "/api/elections");
       return response.json();
     },
+<<<<<<< HEAD
     refetchOnWindowFocus: false,
   });
 
@@ -164,10 +176,42 @@ export default function Voters({
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/election-groups");
       return response.json();
+=======
+    refetchOnWindowFocus: false
+  });
+  
+  // Fetch all voters for the existing picker in Create Voter dialog
+  const { data: allVotersPickerData } = useQuery<{ data: Array<{ _id: string; username: string; role?: string; isVoter?: boolean }> }>({
+    queryKey: ["/api/users/voters-picker"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/users");
+      return res.json();
+    },
+    enabled: createVoterOpen && createVoterMode === 'existing',
+  });
+
+  // Fetch election groups for the bulk generator
+  const {
+    data: electionGroups,
+    isLoading: electionGroupsLoading,
+    isError: electionGroupsError
+  } = useQuery<VoterGroupResponse>({
+    queryKey: ['/api/election-groups'],
+    refetchOnWindowFocus: false
+  });
+
+  // Fetch voter groups for the bulk generator
+  const { data: voterGroupsData } = useQuery<{ data: Array<{ _id: string; name?: string; description?: string; voters?: string[] }> }>({
+    queryKey: ['/api/voter-groups/all-for-bulk'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/voter-groups?limit=200');
+      return res.json();
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
     },
     refetchOnWindowFocus: false,
   });
 
+<<<<<<< HEAD
   const {
     data: availableVotersResponse,
     isLoading: availableLoading,
@@ -277,6 +321,24 @@ export default function Voters({
     availableLoading || electionVotersLoading || electionVotersFetching;
 
   // ── Mutations ─────────────────────────────────────────────────────────────
+=======
+  // Mutation for adding existing voters to an election
+  const addUsersToElectionMutation = useMutation({
+    mutationFn: async ({ userIds, electionIds }: { userIds: string[]; electionIds: string[] }) => {
+      const response = await apiRequest('POST', '/api/users/add-to-election', { userIds, electionIds });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: `${data.data?.updated || 0} voter(s) assigned to election`, variant: 'success' });
+      queryClient.invalidateQueries({ queryKey: ['/api/users/voters'] });
+    },
+    onError: (error) => {
+      toast({ title: 'Assignment failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
+    },
+  });
+
+  // Mutation for generating voters in bulk
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
   const generateVotersMutation = useMutation({
     mutationFn: async (options: BulkVoterGenerationOptions) => {
       const response = await apiRequest("POST", "/api/users/voters/generate", options);
@@ -439,10 +501,54 @@ export default function Voters({
     generateVotersMutation.mutate(options);
   };
 
+<<<<<<< HEAD
   const handleOpenDialog = () => {
     setAddVoterTab("create");
     setSelectedVoterIds([]);
     setExistingSearch("");
+=======
+  const handleAssignVoterGroup = async (voterIds: string[]) => {
+    const eId = embedded ? electionId : selectedElectionId !== 'all' ? selectedElectionId : undefined;
+    if (!eId || voterIds.length === 0) {
+      toast({ title: 'No election context', description: 'Please filter by an election first.', variant: 'destructive' });
+      return;
+    }
+    await addUsersToElectionMutation.mutateAsync({ userIds: voterIds, electionIds: [eId] });
+  };
+
+  const handleImportVoters = () => {
+    toast({
+      title: "Feature coming soon",
+      description: "The ability to import voters will be available soon",
+    });
+  };
+
+  const handleExportVoters = () => {
+    toast({
+      title: "Feature coming soon",
+      description: "The ability to export voters will be available soon",
+    });
+  };
+
+  const handleEditVoter = (id: string) => {
+    toast({
+      title: "Feature coming soon",
+      description: "The ability to edit voters will be available soon",
+    });
+  };
+
+  const handleDeleteVoter = (id: string) => {
+    setDeleteVoterId(id);
+  };
+
+  const confirmDelete = () => {
+    if (deleteVoterId) {
+      deleteVoterMutation.mutate(deleteVoterId);
+    }
+  };
+
+  const handleAddVoter = () => {
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
     setCreateVoterOpen(true);
   };
 
@@ -572,7 +678,9 @@ export default function Voters({
             <VoterBulkGenerator
               elections={bulkGeneratorElections}
               electionGroups={bulkGeneratorGroups}
+              voterGroups={voterGroupsData?.data || []}
               onGenerate={handleGenerateVoters}
+              onAssignVoterGroup={handleAssignVoterGroup}
               isGenerating={generateVotersMutation.isPending}
               fixedElectionId={embedded ? electionId : undefined}
             />
@@ -598,6 +706,7 @@ export default function Voters({
         </AlertDialogContent>
       </AlertDialog>
 
+<<<<<<< HEAD
       {/* ── Add voter dialog (Create New | Add Existing) ──────────────────── */}
       <Dialog open={createVoterOpen} onOpenChange={(o) => { setCreateVoterOpen(o); if (!o) { setSelectedVoterIds([]); setExistingSearch(""); } }}>
         <DialogContent className="max-w-lg">
@@ -675,11 +784,97 @@ export default function Voters({
                         <SelectItem key={getRecordId(e)} value={getRecordId(e)}>
                           {e.title}
                         </SelectItem>
+=======
+      <Dialog open={createVoterOpen} onOpenChange={(open) => {
+          setCreateVoterOpen(open);
+          if (!open) { setCreateVoterMode('choice'); setExistingVoterSearch(''); setSelectedExistingVoterIds([]); }
+        }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Voter</DialogTitle>
+            <DialogDescription>
+              {createVoterMode === 'choice' && 'Choose how to add a voter.'}
+              {createVoterMode === 'existing' && 'Search and select existing voters to assign to this election.'}
+              {createVoterMode === 'new' && 'Create a new voter account.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Choice */}
+          {createVoterMode === 'choice' && (
+            <div className="grid grid-cols-2 gap-3 py-2">
+              <button
+                onClick={() => setCreateVoterMode('existing')}
+                className="flex flex-col items-center justify-center gap-2 p-5 rounded-lg border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
+              >
+                <Search className="h-7 w-7 text-primary" />
+                <span className="text-sm font-medium text-gray-800">Existing Voter</span>
+                <span className="text-xs text-gray-400 text-center">Pick from your voter list</span>
+              </button>
+              <button
+                onClick={() => setCreateVoterMode('new')}
+                className="flex flex-col items-center justify-center gap-2 p-5 rounded-lg border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
+              >
+                <UserPlus className="h-7 w-7 text-primary" />
+                <span className="text-sm font-medium text-gray-800">New Voter</span>
+                <span className="text-xs text-gray-400 text-center">Create a new account</span>
+              </button>
+            </div>
+          )}
+
+          {/* Existing voter picker */}
+          {createVoterMode === 'existing' && (
+            <div className="space-y-3 py-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                <Input
+                  className="pl-9"
+                  placeholder="Search voters by username…"
+                  value={existingVoterSearch}
+                  onChange={(e) => setExistingVoterSearch(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="max-h-56 overflow-y-auto border rounded-md divide-y bg-white">
+                {(() => {
+                  const filtered = (allVotersPickerData?.data || [])
+                    .filter(u => (u.role === 'voter' || u.isVoter === true) && (!existingVoterSearch || u.username.toLowerCase().includes(existingVoterSearch.toLowerCase())))
+                    .slice(0, 80);
+                  if (filtered.length === 0) return (
+                    <p className="text-sm text-gray-400 px-3 py-4 text-center">
+                      {allVotersPickerData ? 'No voters found.' : 'Loading…'}
+                    </p>
+                  );
+                  return filtered.map(u => (
+                    <label key={u._id} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                      <Checkbox
+                        checked={selectedExistingVoterIds.includes(u._id)}
+                        onCheckedChange={(checked) =>
+                          setSelectedExistingVoterIds(prev => checked ? [...prev, u._id] : prev.filter(id => id !== u._id))
+                        }
+                      />
+                      <span className="text-sm font-mono">{u.username}</span>
+                    </label>
+                  ));
+                })()}
+              </div>
+              {selectedExistingVoterIds.length > 0 && (
+                <p className="text-xs text-primary font-medium">{selectedExistingVoterIds.length} selected</p>
+              )}
+              {!embedded && (
+                <div className="space-y-1">
+                  <Label>Assign to Election</Label>
+                  <Select value={existingVoterElectionId} onValueChange={setExistingVoterElectionId}>
+                    <SelectTrigger><SelectValue placeholder="Select election" /></SelectTrigger>
+                    <SelectContent>
+                      {displayElections.map(e => (
+                        <SelectItem key={getRecordId(e)} value={getRecordId(e)}>{e.title}</SelectItem>
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
+<<<<<<< HEAD
               <DialogFooter className="pt-2">
                 <Button variant="outline" onClick={() => setCreateVoterOpen(false)}>
                   Cancel
@@ -810,6 +1005,77 @@ export default function Voters({
               )}
             </TabsContent>
           </Tabs>
+=======
+            </div>
+          )}
+
+          {/* New voter form */}
+          {createVoterMode === 'new' && (
+            <div className="space-y-3 py-1">
+              <div className="space-y-1.5">
+                <Label htmlFor="voter-fullname">Full Name</Label>
+                <Input id="voter-fullname" value={newVoter.fullName} onChange={(e) => setNewVoter({ ...newVoter, fullName: e.target.value })} placeholder="e.g. John Doe" autoFocus />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="voter-username">Username *</Label>
+                <Input id="voter-username" value={newVoter.username} onChange={(e) => setNewVoter({ ...newVoter, username: e.target.value })} placeholder="e.g. john.doe" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="voter-password">Password</Label>
+                <Input id="voter-password" value={newVoter.password} onChange={(e) => setNewVoter({ ...newVoter, password: e.target.value })} placeholder="Leave blank to auto-generate" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="voter-regno">Registration Number</Label>
+                <Input id="voter-regno" value={newVoter.registrationNumber} onChange={(e) => setNewVoter({ ...newVoter, registrationNumber: e.target.value })} placeholder="Optional (defaults to username)" />
+              </div>
+              {!embedded && (
+                <div className="space-y-1.5">
+                  <Label>Assign to Election</Label>
+                  <Select value={newVoter.electionId} onValueChange={(value) => setNewVoter({ ...newVoter, electionId: value })}>
+                    <SelectTrigger><SelectValue placeholder="Select an election" /></SelectTrigger>
+                    <SelectContent>
+                      {formElections.map((election) => (
+                        <SelectItem key={getRecordId(election)} value={getRecordId(election)}>{election.title}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            {createVoterMode !== 'choice' && (
+              <Button variant="ghost" size="sm" onClick={() => { setCreateVoterMode('choice'); setExistingVoterSearch(''); setSelectedExistingVoterIds([]); }}>
+                ← Back
+              </Button>
+            )}
+            {createVoterMode === 'existing' && (
+              <Button
+                disabled={selectedExistingVoterIds.length === 0 || addUsersToElectionMutation.isPending || (!embedded && !existingVoterElectionId)}
+                onClick={async () => {
+                  const eIds = embedded && electionId ? [electionId] : (existingVoterElectionId ? [existingVoterElectionId] : []);
+                  if (eIds.length === 0) return;
+                  await addUsersToElectionMutation.mutateAsync({ userIds: selectedExistingVoterIds, electionIds: eIds });
+                  setCreateVoterOpen(false);
+                  setCreateVoterMode('choice');
+                  setSelectedExistingVoterIds([]);
+                  setExistingVoterSearch('');
+                }}
+              >
+                {addUsersToElectionMutation.isPending ? 'Assigning…' : `Assign ${selectedExistingVoterIds.length} Voter(s)`}
+              </Button>
+            )}
+            {createVoterMode === 'new' && (
+              <>
+                <Button variant="outline" onClick={() => setCreateVoterOpen(false)}>Cancel</Button>
+                <Button onClick={handleSubmitNewVoter} disabled={createVoterMutation.isPending}>
+                  {createVoterMutation.isPending ? 'Creating…' : 'Create Voter'}
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
         </DialogContent>
       </Dialog>
     </Wrapper>

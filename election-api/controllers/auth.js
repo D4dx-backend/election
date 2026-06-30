@@ -72,6 +72,7 @@ exports.getCurrentUser = async (req, res) => {
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
+<<<<<<< HEAD
     res.status(200).json({ success: true, user: stripUser(user) });
   } catch (err) {
     console.error(err);
@@ -161,6 +162,15 @@ exports.changePassword = async (req, res) => {
     await users.updateById(userId, { password: hashedPassword });
 
     res.status(200).json({ success: true, message: "Password changed successfully." });
+=======
+    res.status(200).json({
+      success: true,
+      user: {
+        ...user,
+        id: user._id.toString(), // explicit string id, consistent with /auth/login response
+      },
+    });
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });

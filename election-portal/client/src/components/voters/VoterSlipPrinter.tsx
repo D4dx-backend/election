@@ -126,7 +126,11 @@ export function VoterSlipPrinter({ voter, electionNames }: VoterSlipPrinterProps
             </div>
             <div class="credential-item">
               <div class="label">Password:</div>
+<<<<<<< HEAD
               <div class="value">${displayPassword}</div>
+=======
+              <div class="value">${(voter as any).plainPassword || voter.username?.toLowerCase() || 'N/A'}</div>
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
             </div>
             <div class="credential-item">
               <div class="label">Status:</div>
@@ -170,7 +174,11 @@ export function VoterSlipPrinter({ voter, electionNames }: VoterSlipPrinterProps
   const copyCredentials = () => {
     const credentials = `
 Username: ${voter.username}
+<<<<<<< HEAD
 Password: ${displayPassword}
+=======
+Password: ${(voter as any).plainPassword || voter.username?.toLowerCase() || 'N/A'}
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
 Status: ${voter.status || 'Active'}
 Elections: ${electionNames.join(', ') || 'None assigned'}
     `;
@@ -213,7 +221,11 @@ Elections: ${electionNames.join(', ') || 'None assigned'}
             <div className="col-span-2">{voter.username}</div>
             
             <div className="font-semibold">Password:</div>
+<<<<<<< HEAD
             <div className="col-span-2">{displayPassword}</div>
+=======
+            <div className="col-span-2">{(voter as any).plainPassword || voter.username?.toLowerCase() || 'N/A'}</div>
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
             
             <div className="font-semibold">Serial #:</div>
             <div className="col-span-2">{voter.sequenceNumber || 'N/A'}</div>

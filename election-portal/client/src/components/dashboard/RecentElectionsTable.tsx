@@ -22,8 +22,8 @@ interface RecentElectionsTableProps {
 export function RecentElectionsTable({ elections }: RecentElectionsTableProps) {
   return (
     <Card className="mb-6">
-      <CardHeader className="px-6 py-4 border-b border-gray-200 flex flex-row items-center justify-between">
-        <CardTitle className="text-lg font-medium text-gray-900">Recent Elections</CardTitle>
+      <CardHeader className="px-4 py-3 border-b border-gray-200 flex flex-row items-center justify-between">
+        <CardTitle className="text-sm font-semibold text-gray-900">Recent Elections</CardTitle>
         <Link href="/elections">
           <Button variant="link" className="text-sm font-medium text-primary hover:text-primary-dark">
             View all

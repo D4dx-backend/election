@@ -28,6 +28,8 @@ export interface ElectionWithDetails extends MongoDBFormat {
   status: string;
   maxVoters?: number;
   maxNominees?: number;
+  voterCount?: number;
+  nomineeCount?: number;
   genderBasedSelection?: boolean;
   maleMinimum?: number;
   femaleMinimum?: number;
@@ -101,7 +103,7 @@ export interface BulkVoterGenerationOptions {
   electionIds?: string[];
   electionGroupId?: string;
   voterGroupId?: string;
-  assignmentType: 'election' | 'electionGroup';
+  assignmentType: 'election' | 'electionGroup' | 'voterGroup';
 }
 
 export type ElectionStatus = 'draft' | 'active' | 'completed' | 'archived';

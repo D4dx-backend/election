@@ -224,6 +224,7 @@ export function BulkVoterSlipPrinter({
         const lineGap = 6;
 
         doc.setFontSize(10);
+<<<<<<< HEAD
         doc.text(`Username: ${voter.username}`, x + 5, lineY);
         lineY += lineGap;
         doc.text(`Password: ${displayPwd}`, x + 5, lineY);
@@ -236,6 +237,14 @@ export function BulkVoterSlipPrinter({
         lineY += 5;
 
         doc.setFontSize(8);
+=======
+        doc.text(`Username: ${voter.username}`, x + 5, y + 20);
+        doc.text(`Password: ${(voter as any).plainPassword || voter.username?.toLowerCase() || 'N/A'}`, x + 5, y + 27);
+        doc.text(`Status: ${voter.status || 'Active'}`, x + 5, y + 34);
+        
+        // Elections list
+        doc.text('Elections:', x + 5, y + 41);
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
         if (electionNames.length > 0) {
           const maxShown = 2;
           electionNames.slice(0, maxShown).forEach((name) => {

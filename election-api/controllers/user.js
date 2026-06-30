@@ -53,6 +53,58 @@ async function loadTargetUser(id) {
   return user;
 }
 
+<<<<<<< HEAD
+=======
+// @desc      ADD EXISTING USERS TO AN ELECTION
+// @route     POST /api/v1/users/add-to-election
+// @access    Protected
+exports.addUsersToElection = async (req, res) => {
+  try {
+    const { userIds, electionIds } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'userIds array is required.' });
+    }
+    if (!Array.isArray(electionIds) || electionIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'electionIds array is required.' });
+    }
+    await User.updateMany(
+      { _id: { $in: userIds } },
+      { $addToSet: { electionAccess: { $each: electionIds } } }
+    );
+    res.status(200).json({ success: true, data: { updated: userIds.length } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
+// @desc      ADD EXISTING USERS TO AN ELECTION
+// @route     POST /api/v1/users/add-to-election
+// @access    Protected
+exports.addUsersToElection = async (req, res) => {
+  try {
+    const { userIds, electionIds } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'userIds array is required.' });
+    }
+    if (!Array.isArray(electionIds) || electionIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'electionIds array is required.' });
+    }
+    await User.updateMany(
+      { _id: { $in: userIds } },
+      { $addToSet: { electionAccess: { $each: electionIds } } }
+    );
+    res.status(200).json({ success: true, data: { updated: userIds.length } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
+// @desc      ADD USER
+// @route     POST /api/v1/users
+// @access    public
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
 exports.addUser = async (req, res) => {
   try {
     const targetRole = req.body.role || "voter";
@@ -313,6 +365,15 @@ exports.createVoter = async (req, res) => {
   }
 };
 
+function generateRandomPassword(length = 8) {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 exports.generateVoters = async (req, res) => {
   try {
     roles.assertCanAssignRole(req.user, "voter");
@@ -346,12 +407,18 @@ exports.generateVoters = async (req, res) => {
     for (let i = 0; i < num; i++) {
       const seq = start + i;
       const username = `${prefix}${seq}`;
+<<<<<<< HEAD
       if (existingLower.has(username.toLowerCase())) continue;
       const plainPassword = generatePassword();
+=======
+      if (existingSet.has(username)) continue;
+      const plainPassword = generateRandomPassword(8);
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
       const hashedPassword = await bcrypt.hash(plainPassword, 10);
       docs.push({
         username,
         password: hashedPassword,
+        plainPassword,
         fullName: username,
         role: "voter",
         isVoter: true,
@@ -373,11 +440,21 @@ exports.generateVoters = async (req, res) => {
       });
     }
 
+<<<<<<< HEAD
     const created = await users.insertMany(docs);
 
     if (voterGroupId) {
       const createdIds = created.map((u) => u._id);
       await voterGroups.addVotersToGroup(voterGroupId, createdIds);
+=======
+    const created = await User.insertMany(docs, { ordered: false });
+
+    // If a voterGroupId was provided, push the new user IDs into that group
+    if (voterGroupId && created.length > 0) {
+      const VoterGroup = require('../model/VoterGroup');
+      const newIds = created.map(u => u._id);
+      await VoterGroup.findByIdAndUpdate(voterGroupId, { $push: { voters: { $each: newIds } } });
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
     }
 
     res.status(201).json({
@@ -385,7 +462,7 @@ exports.generateVoters = async (req, res) => {
       message: `Generated ${created.length} voter accounts.`,
       count: created.length,
       skipped: num - created.length,
-      data: created.map((u) => ({ id: u._id, username: u.username })),
+      data: created.map((u) => ({ id: u._id, username: u.username, plainPassword: u.plainPassword })),
     });
   } catch (err) {
     sendError(res, err);
@@ -446,6 +523,7 @@ exports.assignVotersToElection = async (req, res) => {
 
 exports.createFranchiseAdmin = async (req, res) => {
   try {
+<<<<<<< HEAD
     if (req.user.role !== "super_admin") {
       return res.status(403).json({
         success: false,
@@ -479,6 +557,26 @@ exports.createFranchiseAdmin = async (req, res) => {
   } catch (err) {
     sendError(res, err);
   }
+=======
+    const { username, password, fullName, franchiseId } = req.body;
+    if (!username || typeof username !== "string" || !username.trim()) {
+      return res.status(400).json({ success: false, message: "username is required." });
+    }
+    if (!password || typeof password !== "string" || !password.trim()) {
+      return res.status(400).json({ success: false, message: "password is required." });
+    }
+    const existing = await User.findOne({ username: username.trim() });
+    if (existing) return res.status(409).json({ success: false, message: "Username already exists." });
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const userData = { username: username.trim(), password: hashedPassword, fullName, role: "franchise_admin" };
+    // Only set franchiseId if it is a non-empty string (prevents Mongoose CastError)
+    if (franchiseId && String(franchiseId).trim()) {
+      userData.franchiseId = franchiseId;
+    }
+    const user = await User.create(userData);
+    res.status(201).json({ success: true, message: "Franchise admin created.", data: { id: user._id, username: user.username, role: user.role } });
+  } catch (err) { console.error(err); res.status(500).json({ success: false, message: err.toString() }); }
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
 };
 
 exports.createElectionAdmin = async (req, res) => {

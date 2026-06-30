@@ -81,6 +81,7 @@ app.use(handleError);
 
 const PORT = process.env.PORT || 8000;
 
+<<<<<<< HEAD
 async function startServer() {
   try {
     await connectDB();
@@ -93,3 +94,10 @@ async function startServer() {
 }
 
 startServer();
+=======
+// Connect to DB first, then start listening — ensures migrations run before requests arrive
+(async () => {
+  await connectDB();
+  app.listen(PORT, () => console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`));
+})();
+>>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
