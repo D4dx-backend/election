@@ -22,6 +22,7 @@ import Profile from "@/pages/Profile";
 import AuditLogs from "@/pages/AuditLogs";
 import VoterGroups from "@/pages/VoterGroups";
 import Login from "@/pages/Login";
+import ForgotPassword from "@/pages/ForgotPassword";
 import Onboarding from "@/pages/Onboarding";
 import VotingPortal from "@/pages/VotingPortal";
 import VotingBallot from "@/pages/VotingBallot";
@@ -66,15 +67,20 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
     if (hasToken && isError && !isLoading) {
       localStorage.removeItem('authToken');
       localStorage.removeItem('user');
-      if (location !== '/login' && !location.startsWith('/voting/')) {
+      if (location !== '/login' && location !== '/forgot-password' && !location.startsWith('/voting/')) {
         setLocation('/login');
       }
       return;
     }
 
     // If we don't have a token and not on login page, redirect to login
-    // Special case: don't redirect from login page or results page
-    if (!hasToken && location !== '/login' && !location.startsWith('/results/')) {
+    // Special case: don't redirect from login, forgot-password, or results page
+    if (
+      !hasToken &&
+      location !== '/login' &&
+      location !== '/forgot-password' &&
+      !location.startsWith('/results/')
+    ) {
       setLocation('/login');
       return;
     }
@@ -204,6 +210,7 @@ function Router() {
       <Switch>
         {/* Public / auth routes */}
         <Route path="/login" component={Login} />
+        <Route path="/forgot-password" component={ForgotPassword} />
         <Route path="/onboarding" component={Onboarding} />
 
         {/* Voting routes */}

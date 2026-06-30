@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -57,7 +57,12 @@ export default function Analytics({ embedded = false, electionId }: { embedded?:
   const nomineesWithVotes = results?.nominees || [];
   const selectedElection = results?.election || elections.find((e: any) => e._id === selectedElectionId);
   const analytics = results
-    ? { totalVoters: results.eligibleVoters || 0, totalVotesCast: results.totalBallots || 0 }
+    ? {
+        totalVoters: results.eligibleVoters || 0,
+        totalVotesCast: results.totalBallots || 0,
+        pendingVoters: Math.max((results.eligibleVoters || 0) - (results.totalBallots || 0), 0),
+        isFinalized: !!selectedElection?.resultsPublished,
+      }
     : null;
   const analyticsLoading = resultsLoading;
   const nomineesLoading = resultsLoading;
@@ -117,11 +122,53 @@ export default function Analytics({ embedded = false, electionId }: { embedded?:
     }
   };
 
+  const sendReminderMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/analytics/remind/${selectedElectionId}`);
+      return res.json();
+    },
+    onSuccess: (body) => {
+      const data = body?.data;
+      toast({
+        title: data?.emailsSent ? "Reminders sent" : "Reminder summary",
+        description: data?.message || "Reminder request completed.",
+        variant: data?.emailsSent ? "success" : "default",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Could not send reminders",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSendReminder = () => {
-    toast({
-      title: "Feature not implemented",
-      description: "Send reminder functionality would be implemented here",
-    });
+    if (!selectedElectionId) {
+      toast({
+        title: "No election selected",
+        description: "Select an election first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!selectedElection?.votingOpen) {
+      toast({
+        title: "Voting is closed",
+        description: "Reminders can only be sent while voting is open.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if ((analytics?.pendingVoters ?? 0) === 0) {
+      toast({
+        title: "No pending voters",
+        description: "All assigned voters have already cast their ballots.",
+      });
+      return;
+    }
+    sendReminderMutation.mutate();
   };
 
   useEffect(() => {
@@ -193,6 +240,8 @@ export default function Analytics({ embedded = false, electionId }: { embedded?:
               electionsStartDate={selectedElection?.createdAt ? new Date(selectedElection.createdAt) : undefined}
               electionsEndDate={new Date(selectedElection?.electionDate || new Date())}
               onSendReminder={handleSendReminder}
+              sendReminderPending={sendReminderMutation.isPending}
+              votingOpen={!!selectedElection?.votingOpen}
             />
           </div>
         </div>

@@ -1,8 +1,16 @@
 import { useEffect } from 'react';
-import { useLocation } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { LogOut, Vote, ChevronLeft, User, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NotificationBell } from '@/components/layout/NotificationBell';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface VoterLayoutProps {
   children: React.ReactNode;
@@ -96,18 +104,45 @@ export default function VoterLayout({ children, title, showBack, onBack }: Voter
             </p>
           ) : null}
 
-          {/* Right: notifications + user avatar */}
+          {/* Right: notifications + user menu */}
           <div className="flex items-center gap-1">
             <NotificationBell />
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 text-primary font-bold text-sm hover:bg-primary/20 active:scale-95 transition-all"
-              title={`Logged in as ${userFullName} — tap to logout`}
-              aria-label="Logout"
-            >
-              {initials}
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 text-primary font-bold text-sm hover:bg-primary/20 active:scale-95 transition-all"
+                  title={`Logged in as ${userFullName}`}
+                  aria-label="Account menu"
+                >
+                  {initials}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel className="font-normal">
+                  <p className="font-semibold truncate">{userFullName || 'Voter'}</p>
+                  <p className="text-xs text-muted-foreground">Voter account</p>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/profile" className="flex items-center cursor-pointer">
+                    <User className="h-4 w-4 mr-2" />
+                    Profile
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings" className="flex items-center cursor-pointer">
+                    <Settings className="h-4 w-4 mr-2" />
+                    Settings
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-600">
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>

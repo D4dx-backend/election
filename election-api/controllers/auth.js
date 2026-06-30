@@ -166,3 +166,49 @@ exports.changePassword = async (req, res) => {
     res.status(500).json({ success: false, message: err.toString() });
   }
 };
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { username, email, newPassword } = req.body;
+
+    if (!username || !String(username).trim()) {
+      return res.status(400).json({ success: false, message: "Username is required." });
+    }
+    if (!email || !String(email).trim()) {
+      return res.status(400).json({ success: false, message: "Email is required." });
+    }
+    if (!newPassword || String(newPassword).length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 6 characters.",
+      });
+    }
+
+    const user = await users.findByUsername(String(username).trim());
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    if (
+      !user ||
+      user.status === "inactive" ||
+      !user.email ||
+      String(user.email).trim().toLowerCase() !== normalizedEmail
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Username and email do not match our records. Add your email in Profile first, or contact your administrator.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(String(newPassword), 10);
+    await users.updateById(user._id, { password: hashedPassword });
+
+    res.status(200).json({
+      success: true,
+      message: "Password updated successfully. You can sign in with your new password.",
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};

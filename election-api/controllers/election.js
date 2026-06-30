@@ -1,4 +1,5 @@
 const elections = require("../lib/supabase/elections");
+const { enrichElectionsWithCounts } = require("../lib/supabase/electionCounts");
 const { logUserActivity } = require("../utils/auditLog");
 
 function normalizeElectionBody(body) {
@@ -29,7 +30,8 @@ exports.getElectionById = async (req, res) => {
   try {
     const election = await elections.findById(req.params.id);
     if (!election) return res.status(404).json({ success: false, message: "Election not found." });
-    res.status(200).json({ success: true, data: election });
+    const [enriched] = await enrichElectionsWithCounts([election]);
+    res.status(200).json({ success: true, data: enriched });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });
@@ -103,16 +105,17 @@ exports.getElections = async (req, res) => {
       const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
       const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
       const { elections: paged, total } = await elections.findWithPagination(filter, page, limit);
+      const enriched = await enrichElectionsWithCounts(paged);
       const totalPages = Math.max(Math.ceil(total / limit), 1);
       return res.status(200).json({
         success: true,
-        count: paged.length,
+        count: enriched.length,
         pagination: { total, page, pageSize: limit, totalPages },
-        data: paged,
+        data: enriched,
       });
     }
 
-    const data = await elections.find(filter);
+    const data = await enrichElectionsWithCounts(await elections.find(filter));
     res.status(200).json({ success: true, count: data.length, data });
   } catch (err) {
     console.error(err);
