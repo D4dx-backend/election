@@ -3,6 +3,8 @@ const elections = require("../lib/supabase/elections");
 const votes = require("../lib/supabase/votes");
 const franchises = require("../lib/supabase/franchises");
 const users = require("../lib/supabase/users");
+const { sendVoteReminders: runSendVoteReminders } = require("../lib/reminders/sendVoteReminders");
+const { logUserActivity } = require("../utils/auditLog");
 
 exports.getDashboardStats = async (req, res) => {
   try {
@@ -73,6 +75,29 @@ exports.getDashboardStats = async (req, res) => {
     });
   } catch (err) {
     console.error("Controller Error in getDashboardStats:", err.message);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
+exports.sendVoteReminders = async (req, res) => {
+  try {
+    const { electionId } = req.params;
+    const result = await runSendVoteReminders(electionId);
+
+    await logUserActivity(
+      req.user._id,
+      req.ip,
+      "Sent vote reminders",
+      `${result.emailsSent} emails · ${result.pendingCount} pending`,
+      "Election"
+    );
+
+    res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
+    console.error("Controller Error in sendVoteReminders:", err.message);
     res.status(500).json({ success: false, message: err.toString() });
   }
 };

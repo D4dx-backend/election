@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -190,6 +190,12 @@ export default function Login() {
             >
               {loginMutation.isPending ? 'Signing in…' : 'Sign In'}
             </Button>
+
+            <p className="text-center text-sm pt-1">
+              <Link href="/forgot-password" className="text-primary font-medium hover:underline">
+                Forgot password?
+              </Link>
+            </p>
           </form>
         </div>
 

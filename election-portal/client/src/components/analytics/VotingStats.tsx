@@ -9,13 +9,17 @@ interface VotingStatsProps {
   electionsStartDate?: Date;
   electionsEndDate?: Date;
   onSendReminder?: () => void;
+  sendReminderPending?: boolean;
+  votingOpen?: boolean;
 }
 
 export function VotingStats({
   analytics,
   electionsStartDate,
   electionsEndDate,
-  onSendReminder
+  onSendReminder,
+  sendReminderPending = false,
+  votingOpen = true,
 }: VotingStatsProps) {
   const totalVoters = analytics.totalVoters ?? 0;
   const totalVotesCast = analytics.totalVotesCast ?? 0;
@@ -99,10 +103,14 @@ export function VotingStats({
                   variant="outline" 
                   className="w-full text-sm" 
                   onClick={onSendReminder}
+                  disabled={sendReminderPending || !votingOpen || pendingVoters === 0}
                 >
                   <Mail className="mr-2 h-4 w-4" />
-                  Send Reminder
+                  {sendReminderPending ? "Sending…" : "Send Reminder"}
                 </Button>
+              )}
+              {!votingOpen && (
+                <p className="text-xs text-gray-500 mt-2 text-center">Voting must be open to send reminders.</p>
               )}
             </div>
           </div>

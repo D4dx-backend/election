@@ -88,6 +88,7 @@ exports.getElectionResults = async (req, res) => {
           createdAt: election.createdAt,
           resultsPublished: !!election.resultsPublished,
           resultsPublishedAt: election.resultsPublishedAt || null,
+          votingOpen: !!election.votingOpen,
           genderBasedSelection: !!election.genderBasedSelection,
           maleMinimum: election.maleMinimum || 0,
           femaleMinimum: election.femaleMinimum || 0,

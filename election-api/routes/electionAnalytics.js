@@ -5,7 +5,8 @@ const {
   getElectionAnalytic,     // For getting a single analytic by ID
   updateElectionAnalytics, 
   deleteElectionAnalytics,
-  getDashboardStats        // Aggregated dashboard statistics
+  getDashboardStats,
+  sendVoteReminders,
 } = require("../controllers/electionAnalytics"); // Ensure this path is correct
 const { protect, authorize } = require("../middleware/auth"); // Ensure this path is correct and auth.js exports protect
 
@@ -13,6 +14,7 @@ const admin = authorize("super_admin", "franchise_admin", "election_admin");
 
 // Aggregated dashboard statistics (must be declared before "/:id")
 router.get("/dashboard", protect, admin, getDashboardStats);
+router.post("/remind/:electionId", protect, admin, sendVoteReminders);
 
 // Routes for the collection (e.g., /api/v1/election-analytics)
 router

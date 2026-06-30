@@ -3,91 +3,72 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { RecentElectionsTable } from "@/components/dashboard/RecentElectionsTable";
 import { FranchiseOverview } from "@/components/dashboard/FranchiseOverview";
-import { Vote, Users, CheckCircle } from "lucide-react";
+import { Vote, Users, CheckCircle, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { mockDashboardStats, getRecentElections } from "@/lib/mockData";
 import { DashboardStats, ElectionWithDetails } from "@/lib/types";
-import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { apiRequest } from "@/lib/queryClient";
+
+const EMPTY_STATS: DashboardStats = {
+  activeElections: 0,
+  totalVoters: 0,
+  votesCast: 0,
+  totalFranchises: 0,
+  totalElections: 0,
+  franchiseDistribution: [],
+  recentActivity: [],
+};
 
 export default function Dashboard() {
-  const { toast } = useToast();
-  const [user, setUser] = useState<any>(null);
-  
-  // Get the user from localStorage
+  const [user, setUser] = useState<{ fullName?: string; username?: string; role?: string } | null>(null);
+
   useEffect(() => {
-    const userJson = localStorage.getItem('user');
+    const userJson = localStorage.getItem("user");
     if (userJson) {
       try {
-        const userData = JSON.parse(userJson);
-        setUser(userData);
+        setUser(JSON.parse(userJson));
       } catch (error) {
-        console.error('Error parsing user data', error);
+        console.error("Error parsing user data", error);
       }
     }
   }, []);
-  
-  // Fetch dashboard stats from API with fallback to mock data
+
   const {
     data: stats,
     isLoading: statsLoading,
     isError: statsError,
     error: statsFetchError,
   } = useQuery<DashboardStats>({
-    queryKey: ['/api/analytics/dashboard'],
+    queryKey: ["/api/analytics/dashboard"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/analytics/dashboard");
+      const body = await res.json();
+      if (!body.success || !body.data) {
+        throw new Error(body.message || "Failed to load dashboard stats");
+      }
+      return body.data as DashboardStats;
+    },
   });
 
-  // Fetch recent elections from API
   const {
     data: electionsResponse,
     isLoading: electionsLoading,
     isError: electionsError,
     error: electionsFetchError,
   } = useQuery<{ data?: ElectionWithDetails[]; success?: boolean }>({
-    queryKey: ['/api/elections'],
+    queryKey: ["/api/elections"],
     queryFn: async () => {
-      const res = await fetch('/api/elections', {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
-      if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+      const res = await apiRequest("GET", "/api/elections");
       return res.json();
     },
   });
 
-  // Safely extract array regardless of response shape
-  const recentElections: ElectionWithDetails[] = Array.isArray(electionsResponse)
-    ? electionsResponse
-    : Array.isArray(electionsResponse?.data)
-    ? electionsResponse.data
+  const recentElections: ElectionWithDetails[] = Array.isArray(electionsResponse?.data)
+    ? electionsResponse.data.slice(0, 3)
     : [];
 
-  useEffect(() => {
-    if (statsError) {
-      console.error('Error fetching dashboard stats:', statsFetchError);
-      toast({
-        title: "Failed to load dashboard stats",
-        description: "Using cached data instead",
-        variant: "destructive"
-      });
-    }
-  }, [statsError, statsFetchError, toast]);
-
-  useEffect(() => {
-    if (electionsError) {
-      console.error('Error fetching recent elections:', electionsFetchError);
-      toast({
-        title: "Failed to load recent elections",
-        description: "Using cached data instead",
-        variant: "destructive"
-      });
-    }
-  }, [electionsError, electionsFetchError, toast]);
-
-  // Use actual data if available, fall back to mock data if needed
-  const displayStats = stats || mockDashboardStats;
-  const displayElections = recentElections.length > 0 ? recentElections.slice(0, 3) : getRecentElections(3);
+  const displayStats = stats ?? EMPTY_STATS;
 
   useEffect(() => {
     document.title = "Dashboard | Vote+";
@@ -99,11 +80,22 @@ export default function Dashboard() {
         <div className="mb-4">
           <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-sm text-gray-600">
-            {user ? `Welcome, ${user.fullName || user.username}` : 'Overview of all election activities'}
+            {user ? `Welcome, ${user.fullName || user.username}` : "Overview of all election activities"}
           </p>
         </div>
 
-        {/* Stats Overview */}
+        {(statsError || electionsError) && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Could not load dashboard data</AlertTitle>
+            <AlertDescription>
+              {statsError && (statsFetchError as Error)?.message}
+              {statsError && electionsError ? " · " : ""}
+              {electionsError && (electionsFetchError as Error)?.message}
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="grid grid-cols-3 gap-3 mb-4">
           {statsLoading ? (
             <>
@@ -117,9 +109,9 @@ export default function Dashboard() {
                 title="Active Elections"
                 value={displayStats.activeElections}
                 icon={<Vote className="h-5 w-5" />}
-                trend={{ 
-                  value: `${displayStats.activeElections} active now`, 
-                  direction: displayStats.activeElections > 0 ? "up" : "neutral" 
+                trend={{
+                  value: `${displayStats.activeElections} active now`,
+                  direction: displayStats.activeElections > 0 ? "up" : "neutral",
                 }}
               />
 
@@ -129,9 +121,9 @@ export default function Dashboard() {
                 icon={<Users className="h-5 w-5" />}
                 iconBgColor="bg-indigo-100"
                 iconColor="text-indigo-600"
-                trend={{ 
-                  value: `${displayStats.totalVoters} total`, 
-                  direction: "neutral" 
+                trend={{
+                  value: `${displayStats.totalVoters} total`,
+                  direction: "neutral",
                 }}
               />
 
@@ -141,38 +133,48 @@ export default function Dashboard() {
                 icon={<CheckCircle className="h-5 w-5" />}
                 iconBgColor="bg-green-100"
                 iconColor="text-green-600"
-                trend={{ 
-                  value: displayStats.totalVoters > 0 
-                    ? `${Math.round((displayStats.votesCast / displayStats.totalVoters) * 100)}% turnout` 
-                    : 'No voters yet', 
-                  direction: "neutral" 
+                trend={{
+                  value:
+                    displayStats.totalVoters > 0
+                      ? `${Math.round((displayStats.votesCast / displayStats.totalVoters) * 100)}% turnout`
+                      : "No voters yet",
+                  direction: "neutral",
                 }}
               />
             </>
           )}
         </div>
 
-        {/* Recent Elections Table */}
         {electionsLoading ? (
           <div className="mb-6">
             <Skeleton className="h-8 w-48 mb-4" />
             <Skeleton className="h-64 w-full" />
           </div>
+        ) : electionsError ? (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Recent elections unavailable</AlertTitle>
+            <AlertDescription>{(electionsFetchError as Error)?.message}</AlertDescription>
+          </Alert>
+        ) : recentElections.length > 0 ? (
+          <RecentElectionsTable elections={recentElections} />
         ) : (
-          <RecentElectionsTable elections={displayElections} />
+          <Alert className="mb-6">
+            <AlertTitle>No elections yet</AlertTitle>
+            <AlertDescription>Create an election to see recent activity here.</AlertDescription>
+          </Alert>
         )}
 
-        {/* Franchise Overview — only relevant to super admins (cross-franchise view) */}
         {user?.role === "super_admin" && (
           <div className="mt-6">
             {statsLoading ? (
               <Skeleton className="h-64 w-full" />
-            ) : (
+            ) : statsError ? null : (
               <FranchiseOverview
                 stats={{
                   totalFranchises: displayStats.totalFranchises,
                   totalElections: displayStats.totalElections,
-                  franchiseDistribution: displayStats.franchiseDistribution
+                  franchiseDistribution: displayStats.franchiseDistribution,
                 }}
               />
             )}

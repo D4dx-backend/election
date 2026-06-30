@@ -7,7 +7,16 @@ import { BulkVoterSlipPrinter } from "@/components/voters/BulkVoterSlipPrinter";
 import VoterGroups from "@/pages/VoterGroups";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { PlusIcon, Upload, AlertCircle, UsersRound, Search, UserPlus } from "lucide-react";
+import { PlusIcon, Upload, AlertCircle, UsersRound, Search, UserPlus, Download, FileSpreadsheet } from "lucide-react";
+import { assignVotersToElection } from "@/lib/assignVoters";
+import {
+  downloadVoterImportTemplate,
+  exportVotersToExcel,
+  fetchAllVoters,
+  importVotersFromRows,
+  parseVoterImportFile,
+  type ParsedVoterImportRow,
+} from "@/lib/voterImportExport";
 import { BulkVoterGenerationOptions, Pagination, User, Election, ElectionGroup } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -65,6 +74,20 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
   const [selectedExistingVoterIds, setSelectedExistingVoterIds] = useState<string[]>([]);
   const [existingVoterElectionId, setExistingVoterElectionId] = useState(electionId || "");
   const [bulkVoterOpen, setBulkVoterOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<ParsedVoterImportRow[]>([]);
+  const [importElectionId, setImportElectionId] = useState(electionId || "");
+  const [isExporting, setIsExporting] = useState(false);
+  const [editVoterOpen, setEditVoterOpen] = useState(false);
+  const [editingVoter, setEditingVoter] = useState<VoterRecord | null>(null);
+  const [editForm, setEditForm] = useState({
+    fullName: "",
+    username: "",
+    registrationNumber: "",
+    status: "active",
+    electionIds: [] as string[],
+  });
   const [newVoter, setNewVoter] = useState({
     fullName: "",
     username: "",
@@ -83,7 +106,10 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
     if (selectedElectionId && selectedElectionId !== "all") {
       params.append('electionId', selectedElectionId);
     }
-    
+    if (searchQuery.trim()) {
+      params.append('search', searchQuery.trim());
+    }
+
     return params.toString();
   };
   
@@ -94,7 +120,7 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
     isError: votersError,
     refetch: refetchVoters
   } = useQuery<VotersResponse>({
-    queryKey: ['/api/users/voters', selectedElectionId, page, pageSize],
+    queryKey: ['/api/users/voters', selectedElectionId, page, pageSize, searchQuery],
     queryFn: async () => {
       const queryString = getVotersQueryString();
       console.log(`Fetching voters with query params: ${queryString}`);
@@ -148,18 +174,89 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
     refetchOnWindowFocus: false,
   });
 
-  // Mutation for adding existing voters to an election
-  const addUsersToElectionMutation = useMutation({
-    mutationFn: async ({ userIds, electionIds }: { userIds: string[]; electionIds: string[] }) => {
-      const response = await apiRequest('POST', '/api/users/add-to-election', { userIds, electionIds });
-      return response.json();
+  // Mutation for assigning existing voters to an election
+  const assignVotersMutation = useMutation({
+    mutationFn: async ({ voterIds, electionId }: { voterIds: string[]; electionId: string }) => {
+      return assignVotersToElection(voterIds, electionId);
     },
     onSuccess: (data) => {
-      toast({ title: `${data.data?.updated || 0} voter(s) assigned to election`, variant: 'success' });
-      queryClient.invalidateQueries({ queryKey: ['/api/users/voters'] });
+      toast({
+        title: `${data.modified} voter(s) assigned to election`,
+        variant: "success",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/voters"] });
     },
     onError: (error) => {
-      toast({ title: 'Assignment failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
+      toast({
+        title: "Assignment failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateVoterMutation = useMutation({
+    mutationFn: async ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: {
+        fullName: string;
+        username: string;
+        registrationNumber: string;
+        status: string;
+        electionAccess: string[];
+      };
+    }) => {
+      const response = await apiRequest("PUT", `/api/users/${id}`, payload);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.message || "Failed to update voter");
+      return body;
+    },
+    onSuccess: () => {
+      toast({ title: "Voter updated", variant: "success" });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/voters"] });
+      setEditVoterOpen(false);
+      setEditingVoter(null);
+    },
+    onError: (error) => {
+      toast({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const importVotersMutation = useMutation({
+    mutationFn: async ({
+      rows,
+      defaultElectionIds,
+    }: {
+      rows: ParsedVoterImportRow[];
+      defaultElectionIds: string[];
+    }) => importVotersFromRows(rows, defaultElectionIds),
+    onSuccess: (result) => {
+      toast({
+        title: "Import complete",
+        description: `${result.created} created, ${result.skipped} skipped.`,
+        variant: result.errors.length ? "destructive" : "success",
+      });
+      if (result.errors.length) {
+        console.warn("Voter import errors:", result.errors);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/users/voters"] });
+      setImportOpen(false);
+      setImportFile(null);
+      setImportPreview([]);
+    },
+    onError: (error) => {
+      toast({
+        title: "Import failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
     },
   });
 
@@ -265,28 +362,117 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
       toast({ title: 'No election context', description: 'Please filter by an election first.', variant: 'destructive' });
       return;
     }
-    await addUsersToElectionMutation.mutateAsync({ userIds: voterIds, electionIds: [eId] });
+    await assignVotersMutation.mutateAsync({ voterIds, electionId: eId });
   };
 
   const handleImportVoters = () => {
-    toast({
-      title: "Feature coming soon",
-      description: "The ability to import voters will be available soon",
-    });
+    setImportFile(null);
+    setImportPreview([]);
+    setImportElectionId(embedded && electionId ? electionId : selectedElectionId !== "all" ? selectedElectionId : "");
+    setImportOpen(true);
   };
 
-  const handleExportVoters = () => {
-    toast({
-      title: "Feature coming soon",
-      description: "The ability to export voters will be available soon",
-    });
+  const handleImportFileChange = async (file: File | null) => {
+    setImportFile(file);
+    setImportPreview([]);
+    if (!file) return;
+    try {
+      const rows = await parseVoterImportFile(file, displayElections);
+      setImportPreview(rows);
+    } catch (error) {
+      toast({
+        title: "Could not read file",
+        description: error instanceof Error ? error.message : "Invalid file",
+        variant: "destructive",
+      });
+      setImportFile(null);
+    }
+  };
+
+  const handleSubmitImport = () => {
+    if (!importPreview.length) {
+      toast({ title: "No rows to import", variant: "destructive" });
+      return;
+    }
+    const defaultElectionIds =
+      importElectionId && importElectionId !== "all" ? [importElectionId] : [];
+    importVotersMutation.mutate({ rows: importPreview, defaultElectionIds });
+  };
+
+  const handleExportVoters = async () => {
+    setIsExporting(true);
+    try {
+      const allVoters = await fetchAllVoters({
+        electionId: selectedElectionId,
+        search: searchQuery,
+      });
+      if (!allVoters.length) {
+        toast({ title: "No voters to export", variant: "destructive" });
+        return;
+      }
+      const label =
+        selectedElectionId !== "all"
+          ? displayElections.find((e) => getRecordId(e) === selectedElectionId)?.title || "Filtered_Voters"
+          : "All_Voters";
+      exportVotersToExcel(allVoters, displayElections, { electionFilterLabel: label });
+      toast({
+        title: "Export complete",
+        description: `${allVoters.length} voter(s) exported to Excel.`,
+        variant: "success",
+      });
+    } catch (error) {
+      toast({
+        title: "Export failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleEditVoter = (id: string) => {
-    toast({
-      title: "Feature coming soon",
-      description: "The ability to edit voters will be available soon",
+    const voter = voters.find((v) => getRecordId(v) === id);
+    if (!voter) {
+      toast({ title: "Voter not found", variant: "destructive" });
+      return;
+    }
+    setEditingVoter(voter);
+    setEditForm({
+      fullName: voter.fullName || "",
+      username: voter.username || "",
+      registrationNumber: voter.registrationNumber || "",
+      status: voter.status || "active",
+      electionIds: (voter.electionAccess || []).map(String),
     });
+    setEditVoterOpen(true);
+  };
+
+  const handleSubmitEditVoter = () => {
+    if (!editingVoter) return;
+    if (!editForm.username.trim()) {
+      toast({ title: "Username required", variant: "destructive" });
+      return;
+    }
+    updateVoterMutation.mutate({
+      id: getRecordId(editingVoter),
+      payload: {
+        fullName: editForm.fullName.trim() || editForm.username.trim(),
+        username: editForm.username.trim(),
+        registrationNumber: editForm.registrationNumber.trim() || editForm.username.trim(),
+        status: editForm.status,
+        electionAccess: editForm.electionIds,
+      },
+    });
+  };
+
+  const toggleEditElection = (electionIdValue: string, checked: boolean) => {
+    setEditForm((prev) => ({
+      ...prev,
+      electionIds: checked
+        ? [...new Set([...prev.electionIds, electionIdValue])]
+        : prev.electionIds.filter((id) => id !== electionIdValue),
+    }));
   };
 
   const handleDeleteVoter = (id: string) => {
@@ -317,10 +503,11 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
     });
   };
 
-  // Refetch voters when election filter changes
+  // Refetch voters when election filter or search changes
   useEffect(() => {
+    setPage(1);
     refetchVoters();
-  }, [selectedElectionId]);
+  }, [selectedElectionId, searchQuery]);
 
   useEffect(() => {
     if (!embedded) document.title = "Voters | Vote+";
@@ -391,6 +578,16 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
           <Button variant="outline" size="sm" className="h-10" onClick={handleImportVoters}>
             <Upload className="h-4 w-4 mr-2" />
             Import
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10"
+            onClick={handleExportVoters}
+            disabled={isExporting}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            {isExporting ? "Exporting…" : "Export"}
           </Button>
           <Button variant="outline" size="sm" className="h-10" onClick={() => setBulkVoterOpen(true)}>
             <UsersRound className="h-4 w-4 mr-2" />
@@ -620,18 +817,21 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
             )}
             {createVoterMode === 'existing' && (
               <Button
-                disabled={selectedExistingVoterIds.length === 0 || addUsersToElectionMutation.isPending || (!embedded && !existingVoterElectionId)}
+                disabled={selectedExistingVoterIds.length === 0 || assignVotersMutation.isPending || (!embedded && !existingVoterElectionId)}
                 onClick={async () => {
-                  const eIds = embedded && electionId ? [electionId] : (existingVoterElectionId ? [existingVoterElectionId] : []);
-                  if (eIds.length === 0) return;
-                  await addUsersToElectionMutation.mutateAsync({ userIds: selectedExistingVoterIds, electionIds: eIds });
+                  const eId = embedded && electionId ? electionId : existingVoterElectionId;
+                  if (!eId) return;
+                  await assignVotersMutation.mutateAsync({
+                    voterIds: selectedExistingVoterIds,
+                    electionId: eId,
+                  });
                   setCreateVoterOpen(false);
                   setCreateVoterMode('choice');
                   setSelectedExistingVoterIds([]);
                   setExistingVoterSearch('');
                 }}
               >
-                {addUsersToElectionMutation.isPending ? 'Assigning…' : `Assign ${selectedExistingVoterIds.length} Voter(s)`}
+                {assignVotersMutation.isPending ? 'Assigning…' : `Assign ${selectedExistingVoterIds.length} Voter(s)`}
               </Button>
             )}
             {createVoterMode === 'new' && (
@@ -642,6 +842,143 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
                 </Button>
               </>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editVoterOpen} onOpenChange={(open) => {
+        setEditVoterOpen(open);
+        if (!open) setEditingVoter(null);
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Voter</DialogTitle>
+            <DialogDescription>Update voter account details and election access.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-fullname">Full Name</Label>
+              <Input
+                id="edit-fullname"
+                value={editForm.fullName}
+                onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-username">Username *</Label>
+              <Input
+                id="edit-username"
+                value={editForm.username}
+                onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-regno">Registration Number</Label>
+              <Input
+                id="edit-regno"
+                value={editForm.registrationNumber}
+                onChange={(e) => setEditForm({ ...editForm, registrationNumber: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={editForm.status} onValueChange={(value) => setEditForm({ ...editForm, status: value })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {!embedded && displayElections.length > 0 && (
+              <div className="space-y-2">
+                <Label>Election Access</Label>
+                <div className="max-h-40 overflow-y-auto border rounded-md divide-y">
+                  {displayElections.map((election) => {
+                    const eid = getRecordId(election);
+                    return (
+                      <label key={eid} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                        <Checkbox
+                          checked={editForm.electionIds.includes(eid)}
+                          onCheckedChange={(checked) => toggleEditElection(eid, checked === true)}
+                        />
+                        <span className="text-sm">{election.title} — {election.organization}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditVoterOpen(false)}>Cancel</Button>
+            <Button onClick={handleSubmitEditVoter} disabled={updateVoterMutation.isPending}>
+              {updateVoterMutation.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importOpen} onOpenChange={(open) => {
+        setImportOpen(open);
+        if (!open) {
+          setImportFile(null);
+          setImportPreview([]);
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Voters</DialogTitle>
+            <DialogDescription>
+              Upload Excel (.xlsx) or CSV with columns: username, full_name, password (optional), registration_number, elections.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <label className="flex flex-col items-center justify-center w-full min-h-28 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+              <div className="flex flex-col items-center py-5">
+                <FileSpreadsheet className="h-8 w-8 text-gray-400 mb-2" />
+                <p className="text-sm text-gray-600">
+                  {importFile ? importFile.name : "Click to upload spreadsheet"}
+                </p>
+              </div>
+              <input
+                type="file"
+                className="hidden"
+                accept=".xlsx,.csv,.xls"
+                onChange={(e) => handleImportFileChange(e.target.files?.[0] || null)}
+              />
+            </label>
+            <Button type="button" variant="link" className="px-0 h-auto" onClick={downloadVoterImportTemplate}>
+              Download template
+            </Button>
+            {importPreview.length > 0 && (
+              <p className="text-sm text-primary font-medium">{importPreview.length} row(s) ready to import</p>
+            )}
+            {!embedded && (
+              <div className="space-y-1.5">
+                <Label>Default election (optional)</Label>
+                <Select value={importElectionId || "none"} onValueChange={(v) => setImportElectionId(v === "none" ? "" : v)}>
+                  <SelectTrigger><SelectValue placeholder="Assign all imported voters to…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None — use elections column only</SelectItem>
+                    {displayElections.map((election) => (
+                      <SelectItem key={getRecordId(election)} value={getRecordId(election)}>
+                        {election.title} — {election.organization}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleSubmitImport}
+              disabled={!importPreview.length || importVotersMutation.isPending}
+            >
+              {importVotersMutation.isPending ? "Importing…" : `Import ${importPreview.length || 0} Voter(s)`}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
