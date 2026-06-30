@@ -645,11 +645,11 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
       )}
 
       <Dialog open={bulkVoterOpen} onOpenChange={setBulkVoterOpen}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto top-[8vh] translate-y-0 sm:top-[50%] sm:translate-y-[-50%]">
+          <DialogHeader className="pr-8">
             <DialogTitle>Create Bulk Voters</DialogTitle>
             <DialogDescription>
-              Generate multiple voter accounts without leaving this election.
+              Generate multiple voter accounts and assign them to an election, group, or voter group.
             </DialogDescription>
           </DialogHeader>
           {(electionsLoading || electionGroupsLoading) ? (
@@ -660,6 +660,7 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
               electionGroups={bulkGeneratorGroups}
               voterGroups={voterGroupsData?.data || []}
               onGenerate={handleGenerateVoters}
+              onCancel={() => setBulkVoterOpen(false)}
               onAssignVoterGroup={handleAssignVoterGroup}
               isGenerating={generateVotersMutation.isPending}
               fixedElectionId={embedded ? electionId : undefined}

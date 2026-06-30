@@ -75,6 +75,12 @@ type ElectionAdminFormValues = z.infer<typeof electionAdminSchema>;
 
 type ListResponse<T> = { data: T[] };
 
+function asList<T>(value: T[] | ListResponse<T> | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  if (value && Array.isArray(value.data)) return value.data;
+  return [];
+}
+
 interface AdminFranchiseOption {
   _id: string;
   id?: string | number;
@@ -113,33 +119,35 @@ export default function Admins() {
   
   // --- Fetch data ---
   
-  // Fetch franchises
   const { 
-    data: franchises, 
+    data: franchisesRaw, 
     isLoading: franchisesLoading,
     isError: franchisesError
-  } = useQuery<ListResponse<AdminFranchiseOption>>({
+  } = useQuery<AdminFranchiseOption[] | ListResponse<AdminFranchiseOption>>({
     queryKey: ['/api/franchises']
   });
+  const franchiseList = asList(franchisesRaw);
   
   // Fetch franchise admins
   const {
-    data: franchiseAdmins,
+    data: franchiseAdminsRaw,
     isLoading: franchiseAdminsLoading,
     isError: franchiseAdminsError
-  } = useQuery<ListResponse<FranchiseAdminUser>>({
+  } = useQuery<FranchiseAdminUser[] | ListResponse<FranchiseAdminUser>>({
     queryKey: ['/api/users/franchise-admins']
   });
+  const franchiseAdminList = asList(franchiseAdminsRaw);
   
   // Fetch elections (for election admin creation)
   const {
-    data: elections,
+    data: electionsRaw,
     isLoading: electionsLoading,
     isError: electionsError
-  } = useQuery<ListResponse<AdminElectionOption>>({
+  } = useQuery<AdminElectionOption[] | ListResponse<AdminElectionOption>>({
     queryKey: ['/api/elections'],
     enabled: true // Always fetch elections, we'll filter them in the component
   });
+  const electionList = asList(electionsRaw);
   
   // --- Form handling ---
   
@@ -362,21 +370,35 @@ export default function Admins() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Franchise</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select a franchise" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {franchises?.data?.map((franchise) => (
-                              <SelectItem
-                                key={franchise._id || `franchise-${franchise.id}`}
-                                value={String(franchise._id || franchise.id)}
-                              >
-                                {franchise.name}
+                            {franchisesLoading ? (
+                              <SelectItem value="__loading" disabled>
+                                Loading franchises…
                               </SelectItem>
-                            ))}
+                            ) : franchisesError ? (
+                              <SelectItem value="__error" disabled>
+                                Failed to load franchises
+                              </SelectItem>
+                            ) : franchiseList.length === 0 ? (
+                              <SelectItem value="__empty" disabled>
+                                No franchises found — create one first
+                              </SelectItem>
+                            ) : (
+                              franchiseList.map((franchise) => (
+                                <SelectItem
+                                  key={franchise._id || `franchise-${franchise.id}`}
+                                  value={String(franchise._id || franchise.id)}
+                                >
+                                  {franchise.name}
+                                </SelectItem>
+                              ))
+                            )}
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -447,7 +469,7 @@ export default function Admins() {
                               field.onChange(value);
                               setSelectedFranchiseId(value);
                             }}
-                            defaultValue={field.value}
+                            value={field.value}
                           >
                             <FormControl>
                               <SelectTrigger>
@@ -455,14 +477,24 @@ export default function Admins() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {franchises?.data?.map((franchise) => (
-                                <SelectItem
-                                  key={franchise._id || `franchise-${franchise.id}`}
-                                    value={String(franchise._id || franchise.id)}
-                                >
-                                  {franchise.name}
+                              {franchisesLoading ? (
+                                <SelectItem value="__loading" disabled>
+                                  Loading franchises…
                                 </SelectItem>
-                              ))}
+                              ) : franchiseList.length === 0 ? (
+                                <SelectItem value="__empty" disabled>
+                                  No franchises found
+                                </SelectItem>
+                              ) : (
+                                franchiseList.map((franchise) => (
+                                  <SelectItem
+                                    key={franchise._id || `franchise-${franchise.id}`}
+                                    value={String(franchise._id || franchise.id)}
+                                  >
+                                    {franchise.name}
+                                  </SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
                           <FormDescription>
@@ -483,8 +515,8 @@ export default function Admins() {
                           <div className="border rounded-md p-4 space-y-2">
                             {electionsLoading ? (
                               <Skeleton className="h-20 w-full" />
-                            ) : elections && elections.data && elections.data.length > 0 ? (
-                              elections.data
+                            ) : electionList.length > 0 ? (
+                              electionList
                                 .filter(election => {
                                   const electionFranchiseId =
                                     typeof election.franchiseId === 'object' && election.franchiseId?._id
@@ -572,10 +604,10 @@ export default function Admins() {
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
                 </div>
-              ) : franchiseAdmins && franchiseAdmins.data && franchiseAdmins.data.length > 0 ? (
+              ) : franchiseAdminList.length > 0 ? (
                 <>
                 <div className="divide-y divide-gray-100 md:hidden">
-                  {franchiseAdmins.data.map((admin) => (
+                  {franchiseAdminList.map((admin) => (
                     <div key={admin._id} className="py-4 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -630,7 +662,7 @@ export default function Admins() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {franchiseAdmins.data.map((admin) => (
+                    {franchiseAdminList.map((admin) => (
                         <TableRow key={admin._id}>
                           <TableCell className="font-medium">{admin.username}</TableCell>
                           <TableCell>{admin.fullName || '-'}</TableCell>

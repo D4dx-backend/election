@@ -54,17 +54,16 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
-        // When offline, show the dedicated offline page instead of a blank screen.
         offlineGoogleAnalytics: false,
-        navigateFallback: "/offline.html",
-        navigateFallbackDenylist: [/^\/api\//],
+        // SPA shell on failed navigations — NOT offline.html (that caused false
+        // "You're Offline" screens during login/logout full-page redirects).
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
         runtimeCaching: [
           {
-            // All API traffic ALWAYS goes to the network — no caching.
-            // Guarantees voters and admins see live, up-to-date data.
+            // All API traffic ALWAYS goes to the network — no caching (any method).
             urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
             handler: "NetworkOnly",
-            method: "GET",
           },
           {
             // Google Fonts stylesheets — stale-while-revalidate so fonts

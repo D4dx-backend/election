@@ -186,7 +186,7 @@ export function ElectionForm({
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
             <div>
-              <Label htmlFor="maxVoters">Max Voters</Label>
+              <Label htmlFor="maxVoters">Max Voters to Participate</Label>
               <Input
                 id="maxVoters"
                 type="number"
@@ -195,20 +195,26 @@ export function ElectionForm({
                 {...register("maxVoters", { valueAsNumber: true })}
                 className="mt-1"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                How many voters can vote in this election, not your total voter list (0 = no limit)
+              </p>
               {formState.errors.maxVoters && (
                 <p className="text-sm text-red-500 mt-1">{formState.errors.maxVoters.message}</p>
               )}
             </div>
             <div>
-              <Label htmlFor="maxNominees">Max Nominees</Label>
+              <Label htmlFor="maxNominees">Max Nominees to Elect</Label>
               <Input
                 id="maxNominees"
                 type="number"
                 min="0"
-                placeholder="e.g. 20"
+                placeholder="e.g. 5"
                 {...register("maxNominees", { valueAsNumber: true })}
                 className="mt-1"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                How many nominees can win (get elected), not the total on the ballot
+              </p>
               {formState.errors.maxNominees && (
                 <p className="text-sm text-red-500 mt-1">{formState.errors.maxNominees.message}</p>
               )}

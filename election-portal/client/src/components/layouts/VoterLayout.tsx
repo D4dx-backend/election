@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Link, useLocation } from 'wouter';
+import { useQueryClient } from '@tanstack/react-query';
 import { LogOut, Vote, ChevronLeft, User, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NotificationBell } from '@/components/layout/NotificationBell';
@@ -23,6 +24,7 @@ interface VoterLayoutProps {
 export default function VoterLayout({ children, title, showBack, onBack }: VoterLayoutProps) {
   const [, navigate] = useLocation();
   const [location] = useLocation();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const token = localStorage.getItem('authToken');
@@ -37,7 +39,8 @@ export default function VoterLayout({ children, title, showBack, onBack }: Voter
     localStorage.removeItem('authToken');
     localStorage.removeItem('user');
     localStorage.removeItem('userFullName');
-    window.location.href = '/login';
+    queryClient.clear();
+    navigate('/login');
   };
 
   // Derive user initials for the avatar circle

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface LoginResponse {
   success: boolean;
@@ -28,6 +28,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: { username: string; password: string }) => {
@@ -61,12 +62,14 @@ export default function Login() {
         }
       }
 
+      queryClient.clear();
+
       if (data.user.role === 'voter') {
-        window.location.href = '/voting';
+        navigate('/voting');
       } else if (data.user.role === 'election_admin') {
-        window.location.href = '/elections';
+        navigate('/elections');
       } else {
-        window.location.href = '/';
+        navigate('/');
       }
     },
     onError: (error: any) => {
