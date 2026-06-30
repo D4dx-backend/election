@@ -1,10 +1,4 @@
-<<<<<<< HEAD
 const elections = require("../lib/supabase/elections");
-=======
-const Election = require("../model/Election");
-const User = require("../model/User");
-const Nominee = require("../model/Nominee");
->>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
 const { logUserActivity } = require("../utils/auditLog");
 
 function normalizeElectionBody(body) {
@@ -105,61 +99,21 @@ exports.getElections = async (req, res) => {
     }
     if (req.query.status) filter.status = req.query.status;
 
-<<<<<<< HEAD
-=======
-    // Helper: enrich elections with real voter + nominee counts
-    const enrichElections = async (electionDocs) => {
-      if (electionDocs.length === 0) return [];
-      const electionIds = electionDocs.map(e => e._id);
-
-      const [voterAgg, nomineeAgg] = await Promise.all([
-        User.aggregate([
-          { $match: { electionAccess: { $in: electionIds } } },
-          { $unwind: '$electionAccess' },
-          { $match: { electionAccess: { $in: electionIds } } },
-          { $group: { _id: '$electionAccess', count: { $sum: 1 } } },
-        ]),
-        Nominee.aggregate([
-          { $match: { electionId: { $in: electionIds } } },
-          { $group: { _id: '$electionId', count: { $sum: 1 } } },
-        ]),
-      ]);
-
-      const voterMap = {};
-      voterAgg.forEach(v => { voterMap[v._id?.toString()] = v.count; });
-      const nomineeMap = {};
-      nomineeAgg.forEach(n => { nomineeMap[n._id?.toString()] = n.count; });
-
-      return electionDocs.map(e => ({
-        ...e.toObject(),
-        voterCount: voterMap[e._id?.toString()] || 0,
-        nomineeCount: nomineeMap[e._id?.toString()] || 0,
-      }));
-    };
-
->>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
     if (req.query.page !== undefined) {
       const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
       const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
       const { elections: paged, total } = await elections.findWithPagination(filter, page, limit);
       const totalPages = Math.max(Math.ceil(total / limit), 1);
-      const enriched = await enrichElections(paged);
       return res.status(200).json({
         success: true,
-        count: enriched.length,
+        count: paged.length,
         pagination: { total, page, pageSize: limit, totalPages },
-        data: enriched,
+        data: paged,
       });
     }
 
-<<<<<<< HEAD
     const data = await elections.find(filter);
     res.status(200).json({ success: true, count: data.length, data });
-=======
-    const elections = await Election.find(filter);
-    const enriched = await enrichElections(elections);
-    res.status(200).json({ success: true, count: enriched.length, data: enriched });
->>>>>>> 26f9afb79dfc63f3d314199da825cd1ac733f5b3
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: err.toString() });

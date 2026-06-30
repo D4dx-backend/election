@@ -1,11 +1,15 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
-COPY package*.json ./
 
-RUN npm install
+COPY package*.json ./
+RUN npm ci --omit=dev
 
 COPY . .
-EXPOSE 8085
 
-CMD ["npm","start"]
+ENV NODE_ENV=production
+
+# DigitalOcean App Platform injects PORT at runtime (typically 8080).
+EXPOSE 8080
+
+CMD ["npm", "start"]
