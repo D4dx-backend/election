@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import { HelpDialog } from "@/components/help/HelpDialog";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 
@@ -27,17 +28,14 @@ interface HeaderProps {
 
 export function Header({ toggleSidebar, user }: HeaderProps) {
   const [helpOpen, setHelpOpen] = useState(false);
-  
+  const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
+
   const handleLogout = () => {
-    // Clear all authentication data from localStorage
     localStorage.removeItem("authToken");
     localStorage.removeItem("user");
-    
-    // Force a complete page refresh to clear React state
-    window.location.href = "/login";
-    
-    // Log to console for debugging
-    console.log("Logged out, clearing authToken and user from localStorage");
+    queryClient.clear();
+    navigate("/login");
   };
 
   // Open the role-based help dialog

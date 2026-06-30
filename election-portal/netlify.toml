@@ -5,12 +5,34 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Never cache the app shell or service worker — ensures updates reach users quickly.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
 # ── API proxy → Supabase-backed election-api on DigitalOcean ────────────────
 # These must come BEFORE the SPA catch-all redirect.
 
 [[redirects]]
   from   = "/api/auth/*"
   to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/auth/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/franchises"
+  to     = "https://election-api-vbpil.ondigitalocean.app/api/v1/franchise"
   status = 200
   force  = true
 

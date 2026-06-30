@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -32,6 +31,7 @@ interface VoterBulkGeneratorProps {
     voters?: string[];
   }>;
   onGenerate: (options: BulkVoterGenerationOptions) => void;
+  onCancel?: () => void;
   onAssignVoterGroup?: (voterIds: string[]) => Promise<void>;
   isGenerating?: boolean;
   fixedElectionId?: string;
@@ -42,6 +42,7 @@ export function VoterBulkGenerator({
   electionGroups = [],
   voterGroups = [],
   onGenerate,
+  onCancel,
   onAssignVoterGroup,
   isGenerating = false,
   fixedElectionId,
@@ -128,12 +129,8 @@ export function VoterBulkGenerator({
     );
 
   return (
-    <Card className="mb-0">
-      <CardHeader className="px-6 py-4 border-b border-gray-200">
-        <CardTitle className="text-lg font-medium text-gray-900">Create Bulk Voters</CardTitle>
-      </CardHeader>
-      <CardContent className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+    <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <Label htmlFor="prefix">Prefix</Label>
             <Input
@@ -184,7 +181,7 @@ export function VoterBulkGenerator({
         </div>
 
         {!fixedElectionId && (
-          <div className="mb-6">
+          <div>
             <Label>Assignment Type</Label>
             <Tabs 
               defaultValue="election" 
@@ -199,7 +196,7 @@ export function VoterBulkGenerator({
 
               <TabsContent value="election" className="mt-4">
                 <Label htmlFor="electionAccess">Assign to Election</Label>
-                <div className="space-y-2 mt-2">
+                <div className="space-y-2 mt-2 max-h-40 overflow-y-auto pr-1 border rounded-md p-3">
                   {elections && elections.map((election) => {
                     const id = election?._id?.toString() || 
                               (typeof election?.id === 'object' ? election.id?.toString() : 
@@ -316,7 +313,7 @@ export function VoterBulkGenerator({
 
 
 
-        <div className="bg-blue-50 p-4 rounded-md mb-6">
+        <div className="bg-blue-50 p-4 rounded-md">
           <p className="text-sm text-blue-700">
             <strong>Note:</strong> Generated voter accounts will have usernames in the format 
             <code className="mx-1 px-1 bg-blue-100 rounded">{prefix}XXXX</code> 
@@ -324,7 +321,12 @@ export function VoterBulkGenerator({
           </p>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2 pt-2">
+          {onCancel && (
+            <Button type="button" variant="outline" onClick={onCancel} disabled={isGenerating}>
+              Cancel
+            </Button>
+          )}
           <Button 
             onClick={handleSubmit} 
             disabled={!isValid || isGenerating}
@@ -375,7 +377,6 @@ export function VoterBulkGenerator({
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+    </div>
   );
 }

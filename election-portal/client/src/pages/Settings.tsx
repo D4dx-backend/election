@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AccountShell } from "@/components/account/AccountShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +29,8 @@ import {
 
 export default function Settings() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -125,7 +127,8 @@ export default function Settings() {
     localStorage.removeItem("authToken");
     localStorage.removeItem("user");
     localStorage.removeItem("userFullName");
-    window.location.href = "/login";
+    queryClient.clear();
+    navigate("/login");
   };
 
   return (
