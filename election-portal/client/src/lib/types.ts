@@ -1,22 +1,20 @@
 import { User, Franchise, Election, Nominee, Vote, ElectionGroup, VoterGroup, ElectionAnalytic } from "@shared/schema";
 
-// Re-export the types from shared schema to avoid errors
 export type { Election, Nominee, ElectionGroup, Franchise, User, Vote, VoterGroup, ElectionAnalytic };
 
-// Extended MongoDB type to support both MongoDB and schema formats
-export interface MongoDBFormat {
+/** API entity shape from Supabase-backed election-api (_id + id are UUID strings). */
+export interface ApiEntityFormat {
   _id?: string;
-  id?: number | string;
-  electionAccess?: (string | any)[];
+  id?: string;
+  electionAccess?: string[];
 }
 
-// Extended types with additional frontend-specific properties
 export interface UserWithElections extends User {
   elections?: Election[];
 }
 
-export interface ElectionWithDetails extends MongoDBFormat {
-  franchiseId?: string | number;
+export interface ElectionWithDetails extends ApiEntityFormat {
+  franchiseId?: string;
   franchise?: Franchise;
   nominees?: Nominee[];
   voters?: User[];
@@ -37,10 +35,10 @@ export interface ElectionWithDetails extends MongoDBFormat {
   votingOpen?: boolean;
   resultsPublished?: boolean;
   resultsPublishedAt?: string | Date | null;
-  voterResultDisplay?: 'result_only' | 'percentage' | 'score' | 'full';
+  voterResultDisplay?: "result_only" | "percentage" | "score" | "full";
   nomineeDisplayOrder?: string;
-  electionGroupId?: string | number;
-  createdBy?: string | number;
+  electionGroupId?: string;
+  createdBy?: string;
   createdAt?: string | Date;
   updatedAt?: string | Date;
   logo?: {
@@ -67,13 +65,13 @@ export interface DashboardStats {
   recentActivity: {
     action: string;
     timestamp: string;
-    type: 'success' | 'info' | 'warning';
+    type: "success" | "info" | "warning";
   }[];
 }
 
 export interface VoteValidationError {
   message: string;
-  type: 'male' | 'female' | 'max' | 'min';
+  type: "male" | "female" | "max" | "min";
 }
 
 export interface Pagination {
@@ -84,14 +82,14 @@ export interface Pagination {
 }
 
 export interface ElectionFilter {
-  franchiseId?: number;
+  franchiseId?: string;
   status?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }
 
 export interface VoterFilter {
-  electionId?: number;
+  electionId?: string;
   status?: string;
   search?: string;
 }
@@ -103,9 +101,9 @@ export interface BulkVoterGenerationOptions {
   electionIds?: string[];
   electionGroupId?: string;
   voterGroupId?: string;
-  assignmentType: 'election' | 'electionGroup' | 'voterGroup';
+  assignmentType: "election" | "electionGroup" | "voterGroup";
 }
 
-export type ElectionStatus = 'draft' | 'active' | 'completed' | 'archived';
-export type VoteStatus = 'voted' | 'pending';
-export type NomineeStatus = 'active' | 'withdrawn' | 'disqualified';
+export type ElectionStatus = "draft" | "active" | "completed" | "archived";
+export type VoteStatus = "voted" | "pending";
+export type NomineeStatus = "active" | "withdrawn" | "disqualified";

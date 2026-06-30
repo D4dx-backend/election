@@ -1,11 +1,11 @@
 [build]
-  command   = "vite build"
+  command   = "npm run build"
   publish   = "dist/public"
 
 [build.environment]
   NODE_VERSION = "20"
 
-# ── API proxy rules (mirrors the Express proxy in server/routes.ts) ──────────
+# ── API proxy → Supabase-backed election-api on DigitalOcean ────────────────
 # These must come BEFORE the SPA catch-all redirect.
 
 [[redirects]]

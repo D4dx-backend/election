@@ -7,7 +7,7 @@ const API_URL = process.env.VITE_API_URL || "http://localhost:8000";
 
 /**
  * Maps portal /api/* routes to election-api /api/v1/* routes.
- * The portal server is a thin proxy — no direct MongoDB connection needed.
+ * Maps portal /api/* routes to election-api /api/v1/* (Supabase-backed).
  *
  * NOTE: When app.use("/api/auth", ...) mounts a middleware, Express strips the
  * "/api/auth" prefix before the proxy sees the path. So pathRewrite must map

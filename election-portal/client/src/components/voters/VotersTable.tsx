@@ -50,7 +50,7 @@ export function VotersTable({
       return [];
     }
 
-    // Convert electionAccess from array of ObjectIds to array of strings
+    // Normalize electionAccess UUIDs to strings
     const voterElectionIds = Array.isArray(voter.electionAccess) 
       ? voter.electionAccess.map((id) => id.toString())
       : [];
