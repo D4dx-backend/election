@@ -23,7 +23,7 @@ const formSchema = insertElectionSchema
   .extend({
     electionDate: z.string().min(1, "Election date is required"),
     numberToBeElected: z.number().min(1, "Must elect at least 1 person"),
-    franchiseId: z.any().optional(), // Accept MongoDB ObjectId or number
+    franchiseId: z.string().uuid().optional(),
     file: z.any().optional()
   });
 
@@ -323,11 +323,11 @@ export function ElectionForm({
                   {franchises && franchises.length > 0 && franchises.map(franchise => {
                     if (!franchise) return null;
                     
-                    // Handle MongoDB _id or regular id
+                    // Supabase UUID (_id or id from API)
                     let franchiseId = '';
                     try {
-                      franchiseId = franchise._id ? franchise._id.toString() : 
-                                  franchise.id ? franchise.id.toString() : '';
+                      franchiseId = franchise._id ? String(franchise._id) :
+                                  franchise.id ? String(franchise.id) : '';
                     } catch (err) {
                       console.log('Error getting franchise ID:', err);
                       return null;
