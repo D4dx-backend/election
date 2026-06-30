@@ -1,0 +1,43 @@
+# DigitalOcean App Platform spec for election-api (Supabase-backed).
+# Apply via: doctl apps create --spec .do/app.yaml
+# Update:    doctl apps update <APP_ID> --spec .do/app.yaml
+#
+# Set secret env vars in the DO dashboard or via doctl — never commit real values.
+
+name: election-api
+region: nyc
+
+services:
+  - name: api
+    github:
+      repo: D4dx-backend/election
+      branch: main
+      deploy_on_push: true
+    source_dir: election-api
+    dockerfile_path: election-api/Dockerfile
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 20
+      period_seconds: 30
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    envs:
+      - key: NODE_ENV
+        value: production
+        scope: RUN_TIME
+      - key: SUPABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: FRONTEND_URLS
+        value: https://election-portal-web.netlify.app
+        scope: RUN_TIME
