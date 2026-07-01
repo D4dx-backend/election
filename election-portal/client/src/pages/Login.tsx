@@ -108,7 +108,7 @@ export default function Login() {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
+    <div className="min-h-screen flex flex-col bg-white dark:bg-gray-900">
       {/* Top brand strip */}
       <div className="flex-shrink-0 pt-safe">
         <div className="pt-10 pb-8 flex flex-col items-center px-6">
@@ -147,7 +147,7 @@ export default function Login() {
                   onChange={(e) => setUsername(e.target.value)}
                   required
                   disabled={loginMutation.isPending}
-                  className="pl-10 h-12 rounded-xl text-base bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus-visible:ring-primary"
+                  className="pl-10 h-12 rounded-xl text-base bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus-visible:ring-primary"
                   autoComplete="username"
                   autoCapitalize="none"
                   autoCorrect="off"
@@ -170,7 +170,7 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   disabled={loginMutation.isPending}
-                  className="pl-10 pr-12 h-12 rounded-xl text-base bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus-visible:ring-primary"
+                  className="pl-10 pr-12 h-12 rounded-xl text-base bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus-visible:ring-primary"
                   autoComplete="current-password"
                 />
                 <button

@@ -3,6 +3,7 @@ import { useParams, useLocation } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import VoterLayout from '@/components/layouts/VoterLayout';
+import { getElectionLabel } from '@/lib/electionHelpers';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -231,8 +232,7 @@ export default function VotingBallot() {
           {/* Election info */}
           <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 mb-4">
             <p className="text-xs text-gray-400 mb-1">Election</p>
-            <h2 className="font-bold text-gray-900 dark:text-white">{election.title}</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{election.organization}</p>
+            <h2 className="font-bold text-gray-900 dark:text-white">{getElectionLabel(election)}</h2>
             <div className="flex items-center gap-1.5 mt-2 text-xs text-gray-400">
               <Calendar className="h-3.5 w-3.5" />
               {formatDate(election.electionDate)}
@@ -288,8 +288,7 @@ export default function VotingBallot() {
 
           {/* Election info */}
           <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 mb-5">
-            <h2 className="font-bold text-gray-900 dark:text-white">{election.title}</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{election.organization}</p>
+            <h2 className="font-bold text-gray-900 dark:text-white">{getElectionLabel(election)}</h2>
           </div>
 
           <h3 className="font-bold text-base text-gray-800 dark:text-white mb-3">
@@ -352,7 +351,7 @@ export default function VotingBallot() {
 
   // ── Select nominees (main view) ──
   return (
-    <VoterLayout title={election?.title || 'Cast Your Vote'} showBack onBack={() => navigate('/voting')}>
+    <VoterLayout title={election ? getElectionLabel(election) : 'Cast Your Vote'} showBack onBack={() => navigate('/voting')}>
       <div className="px-4 pt-4 pb-28 max-w-lg mx-auto">
         {election && (
           <>
@@ -361,7 +360,7 @@ export default function VotingBallot() {
               <div className="w-full h-40 rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-700 mb-4">
                 <img
                   src={election.logo.url}
-                  alt={election.logo.alt || election.title}
+                  alt={election.logo.alt || getElectionLabel(election)}
                   className="w-full h-full object-contain"
                 />
               </div>
@@ -369,8 +368,7 @@ export default function VotingBallot() {
 
             {/* Election meta */}
             <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 mb-4">
-              <h1 className="font-bold text-lg text-gray-900 dark:text-white leading-snug">{election.title}</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{election.organization}</p>
+              <h1 className="font-bold text-lg text-gray-900 dark:text-white leading-snug">{getElectionLabel(election)}</h1>
               <div className="flex items-center gap-1.5 mt-2 text-xs text-gray-400">
                 <Calendar className="h-3.5 w-3.5" />
                 {formatDate(election.electionDate)}

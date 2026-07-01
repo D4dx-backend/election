@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { LogOut, Vote, ChevronLeft, User, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NotificationBell } from '@/components/layout/NotificationBell';
+import { SiteFooter } from '@/components/layout/SiteFooter';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -71,7 +72,7 @@ export default function VoterLayout({ children, title, showBack, onBack }: Voter
   const isOnSettings = location === '/settings';
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen flex flex-col bg-white dark:bg-gray-900">
       {/* ── Header ── */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30 shadow-sm">
         <div className="flex items-center justify-between h-14 px-4">
@@ -80,7 +81,7 @@ export default function VoterLayout({ children, title, showBack, onBack }: Voter
             <button
               type="button"
               onClick={onBack ?? (() => navigate('/voting'))}
-              className="flex items-center justify-center w-10 h-10 -ml-2 rounded-full text-gray-600 hover:bg-gray-100 active:bg-gray-200 transition-colors"
+              className="flex items-center justify-center w-10 h-10 -ml-2 rounded-full text-gray-600 hover:bg-primary/10 active:bg-gray-200 transition-colors"
               aria-label="Go back"
             >
               <ChevronLeft className="h-5 w-5" />
@@ -151,28 +152,17 @@ export default function VoterLayout({ children, title, showBack, onBack }: Voter
       </header>
 
       {/* ── Main Content ── */}
-      <main className="flex-1 pb-20">
-        {children}
-
-        <footer className="mt-8 px-4 py-4 text-center text-xs text-gray-400">
-          Powered by{' '}
-          <a
-            href="https://d4dx.co"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-semibold text-primary hover:underline"
-          >
-            D4DX.CO
-          </a>
-        </footer>
+      <main className="flex flex-1 flex-col min-h-[calc(100dvh-4rem)] pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
+        <div className="flex flex-1 flex-col">{children}</div>
+        <SiteFooter />
       </main>
 
-      {/* ── Bottom Navigation ── */}
+      {/* ── Bottom Navigation (mobile only) ── */}
       <nav
-        className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 fixed bottom-0 inset-x-0 z-40"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        className="lg:hidden bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-700 fixed bottom-0 left-0 right-0 z-50 shadow-[0_-1px_6px_rgba(0,0,0,0.06)] mobile-bottom-nav"
+        aria-label="Voter navigation"
       >
-        <ul className="flex items-stretch justify-around">
+        <ul className="flex h-14 items-stretch justify-around">
           <li className="flex-1">
             <button
               type="button"

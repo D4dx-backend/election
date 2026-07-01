@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
+import { getElectionLabel } from '@/lib/electionHelpers';
 import {
   AlertCircle,
   CheckCircle2,
@@ -165,7 +166,7 @@ export default function VotingPortal() {
                       <div className="w-full h-36 bg-gray-100 dark:bg-gray-700">
                         <img
                           src={election.logo.url}
-                          alt={election.logo.alt || election.title}
+                          alt={election.logo.alt || getElectionLabel(election)}
                           className="w-full h-full object-contain"
                         />
                       </div>
@@ -177,11 +178,8 @@ export default function VotingPortal() {
                       <div className="flex items-start justify-between gap-2 mb-3">
                         <div className="flex-1 min-w-0">
                           <h2 className="font-bold text-base leading-snug text-gray-900 dark:text-white">
-                            {election.title}
+                            {getElectionLabel(election)}
                           </h2>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                            {election.organization}
-                          </p>
                         </div>
                         {voted ? (
                           <span className="flex-shrink-0 flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300 px-2.5 py-1 rounded-full">

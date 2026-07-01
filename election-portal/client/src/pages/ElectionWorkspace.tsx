@@ -15,7 +15,6 @@ import {
   Vote,
   BarChart3,
   CalendarDays,
-  Building2,
   CheckCircle2,
   Trophy,
   ShieldCheck,
@@ -27,6 +26,9 @@ import Voters from "@/pages/Voters";
 import Analytics from "@/pages/Analytics";
 import { ElectionResultActions } from "@/components/elections/ElectionResultActions";
 import { ElectionAdminTab } from "@/components/elections/ElectionAdminTab";
+import { AdminVotingDetailsPanel } from "@/components/elections/AdminVotingDetailsPanel";
+import { ManualWinnerPicker } from "@/components/elections/ManualWinnerPicker";
+import { getElectionLabel, isElectionLocked } from "@/lib/electionHelpers";
 
 function StatusBadge({ status }: { status?: string }) {
   const map: Record<string, string> = {
@@ -42,10 +44,18 @@ function StatusBadge({ status }: { status?: string }) {
   );
 }
 
+function getTabFromSearch() {
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  if (tab === "voters" || tab === "results" || tab === "admin" || tab === "nominees") {
+    return tab;
+  }
+  return "nominees";
+}
+
 export default function ElectionWorkspace() {
   const { id } = useParams<{ id: string }>();
-  const [, navigate] = useLocation();
-  const [tab, setTab] = useState("nominees");
+  const [location, navigate] = useLocation();
+  const [tab, setTab] = useState(getTabFromSearch);
 
   // Role: only super/franchise admins may create election admins
   const userData = JSON.parse(localStorage.getItem("user") || "null");
@@ -103,8 +113,22 @@ export default function ElectionWorkspace() {
   const turnout = results?.turnout ?? null;
 
   useEffect(() => {
-    document.title = election?.title ? `${election.title} | Vote+` : "Election | Vote+";
-  }, [election?.title]);
+    document.title = election ? `${getElectionLabel(election)} | Vote+` : "Election | Vote+";
+  }, [election]);
+
+  useEffect(() => {
+    const nextTab = getTabFromSearch();
+    setTab(nextTab);
+  }, [location]);
+
+  const handleTabChange = (value: string) => {
+    setTab(value);
+    if (id) {
+      navigate(`/elections/${id}?tab=${value}`);
+    }
+  };
+
+  const electionLocked = isElectionLocked(election?.status);
 
   return (
     <MainLayout>
@@ -135,22 +159,16 @@ export default function ElectionWorkspace() {
                 {election.logo?.url && (
                   <img
                     src={election.logo.url}
-                    alt={election.title}
+                    alt={election.logo?.alt || getElectionLabel(election)}
                     className="h-14 w-14 rounded-lg object-cover border border-gray-200 shrink-0"
                   />
                 )}
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h1 className="text-2xl font-bold text-gray-900 truncate">{election.title}</h1>
+                    <h1 className="text-2xl font-bold text-gray-900 truncate">{getElectionLabel(election)}</h1>
                     <StatusBadge status={election.status} />
                   </div>
                   <p className="text-sm text-gray-500 mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
-                    {election.organization && (
-                      <span className="inline-flex items-center gap-1">
-                        <Building2 className="h-3.5 w-3.5" />
-                        {election.organization}
-                      </span>
-                    )}
                     {election.electionDate && (
                       <span className="inline-flex items-center gap-1">
                         <CalendarDays className="h-3.5 w-3.5" />
@@ -182,21 +200,23 @@ export default function ElectionWorkspace() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2 shrink-0">
-                <Link href={`/elections/${id}/edit`}>
-                  <Button variant="outline" size="sm">
-                    <Pencil className="h-4 w-4 mr-1" />
-                    Edit Election
-                  </Button>
-                </Link>
-              </div>
+              {!electionLocked && (
+                <div className="flex gap-2 shrink-0">
+                  <Link href={`/elections/${id}/edit`}>
+                    <Button variant="outline" size="sm">
+                      <Pencil className="h-4 w-4 mr-1" />
+                      Edit Election
+                    </Button>
+                  </Link>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
       )}
 
       {/* Tabs */}
-      <Tabs value={tab} onValueChange={setTab} className="w-full">
+      <Tabs value={tab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="mb-6 flex w-full flex-wrap h-auto justify-start gap-1">
           <TabsTrigger value="nominees" className="gap-1.5">
             <Users className="h-4 w-4" /> Nominees
@@ -216,12 +236,12 @@ export default function ElectionWorkspace() {
 
         {/* Nominees */}
         <TabsContent value="nominees" className="mt-0">
-          {id && <Nominees embedded electionId={id} />}
+          {id && <Nominees key={id} embedded electionId={id} readOnly={electionLocked} />}
         </TabsContent>
 
         {/* Voters */}
         <TabsContent value="voters" className="mt-0">
-          {id && <Voters embedded electionId={id} />}
+          {id && <Voters embedded electionId={id} readOnly={electionLocked} />}
         </TabsContent>
 
         {/* Results & Analytics */}
@@ -229,7 +249,7 @@ export default function ElectionWorkspace() {
           {id && (
             <ElectionResultActions
               electionId={id}
-              electionTitle={election?.title}
+              electionTitle={election ? getElectionLabel(election) : undefined}
               organization={election?.organization}
               electionDate={election?.electionDate}
               resultsPublished={!!election?.resultsPublished}
@@ -238,6 +258,18 @@ export default function ElectionWorkspace() {
               numberToBeElected={election?.numberToBeElected || 1}
               genderBasedSelection={!!election?.genderBasedSelection}
             />
+          )}
+          {id && election?.manualWinnerSelection && (
+            <ManualWinnerPicker
+              electionId={id}
+              enabled={!!election.manualWinnerSelection}
+              numberToBeElected={election?.numberToBeElected || 1}
+              nominees={results?.nominees || []}
+              manualWinnerIds={election?.manualWinnerIds || results?.election?.manualWinnerIds || []}
+            />
+          )}
+          {id && election?.adminVotingDetailsEnabled && (
+            <AdminVotingDetailsPanel electionId={id} enabled={!!election.adminVotingDetailsEnabled} />
           )}
           {id && <Analytics embedded electionId={id} />}
         </TabsContent>
@@ -249,7 +281,7 @@ export default function ElectionWorkspace() {
               <ElectionAdminTab
                 electionId={id}
                 franchiseId={electionFranchiseId}
-                electionTitle={election?.title}
+                electionTitle={election ? getElectionLabel(election) : undefined}
               />
             )}
           </TabsContent>

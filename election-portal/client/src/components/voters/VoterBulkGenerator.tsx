@@ -9,20 +9,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, Shuffle } from "lucide-react";
 import { BulkVoterGenerationOptions } from "@/lib/types";
+import { getElectionLabel } from "@/lib/electionHelpers";
+import { SelectCheckbox } from "@/components/ui/row-select-checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { shufflePrefix, generateRandomPrefix, buildUsernamePreview } from "@/lib/voterPrefix";
 
 interface VoterBulkGeneratorProps {
   elections: Array<{
     _id: string;
-    title: string;
+    title?: string;
     organization: string;
-  }>;
-  electionGroups: Array<{
-    _id: string;
-    name: string;
   }>;
   voterGroups?: Array<{
     _id: string;
@@ -37,9 +36,8 @@ interface VoterBulkGeneratorProps {
   fixedElectionId?: string;
 }
 
-export function VoterBulkGenerator({ 
-  elections, 
-  electionGroups = [],
+export function VoterBulkGenerator({
+  elections,
   voterGroups = [],
   onGenerate,
   onCancel,
@@ -47,13 +45,12 @@ export function VoterBulkGenerator({
   isGenerating = false,
   fixedElectionId,
 }: VoterBulkGeneratorProps) {
-  const [prefix, setPrefix] = useState<string>("VOTE");
+  const [prefix, setPrefix] = useState<string>(() => generateRandomPrefix());
   const [startingNumber, setStartingNumber] = useState<number>(1001);
   const [count, setCount] = useState<number>(10);
   const [selectedElections, setSelectedElections] = useState<string[]>(fixedElectionId ? [fixedElectionId] : []);
-  const [selectedElectionGroupId, setSelectedElectionGroupId] = useState<string>("");
   const [selectedVoterGroupId, setSelectedVoterGroupId] = useState<string>("");
-  const [assignmentType, setAssignmentType] = useState<"election" | "electionGroup" | "voterGroup">("election");
+  const [assignmentType, setAssignmentType] = useState<"election" | "voterGroup">("election");
   const [assigningGroupId, setAssigningGroupId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,29 +60,19 @@ export function VoterBulkGenerator({
     }
   }, [fixedElectionId]);
 
-  const handleElectionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const electionId = e.target.value;
-    setSelectedElections((prevSelected) => {
-      if (e.target.checked) {
-        return [...prevSelected, electionId];
-      } else {
-        return prevSelected.filter((id) => id !== electionId);
-      }
-    });
+  const usernamePreview = buildUsernamePreview(prefix, startingNumber, count);
+
+  const toggleElectionId = (electionId: string) => {
+    setSelectedElections((prev) =>
+      prev.includes(electionId)
+        ? prev.filter((id) => id !== electionId)
+        : [...prev, electionId]
+    );
   };
 
-  // Safely get election title
   const getElectionTitle = (electionId: string) => {
-    const election = elections?.find(e => {
-      const id = e?._id?.toString() || (e?.id ? String(e.id) : '');
-      return id === electionId;
-    });
-    return election ? `${election.title || 'Untitled'} - ${election.organization || 'Organization'}` : 'Select an election';
-  };
-
-  // Handle election group selection
-  const handleElectionGroupChange = (selectedValue: string) => {
-    setSelectedElectionGroupId(selectedValue);
+    const election = elections?.find((e) => e?._id?.toString() === electionId);
+    return election ? getElectionLabel(election) : "Select an election";
   };
 
   const handleSubmit = () => {
@@ -99,17 +86,16 @@ export function VoterBulkGenerator({
     // Prepare generation options
     const options: BulkVoterGenerationOptions = {
       prefix,
+      shuffledPrefix: prefix.trim(),
       startingNumber,
       count,
       assignmentType: assignmentType
     };
 
     // Add election-specific options
-    if (assignmentType === 'election' && selectedElections.length > 0) {
+    if (assignmentType === "election" && selectedElections.length > 0) {
       options.electionIds = selectedElections;
-    } else if (assignmentType === 'electionGroup' && selectedElectionGroupId) {
-      options.electionGroupId = selectedElectionGroupId;
-    } else if (assignmentType === 'voterGroup' && selectedVoterGroupId) {
+    } else if (assignmentType === "voterGroup" && selectedVoterGroupId) {
       options.voterGroupId = selectedVoterGroupId;
     }
 
@@ -123,9 +109,8 @@ export function VoterBulkGenerator({
     count > 0 && 
     count <= 1000 && // Reasonable limit
     (
-      (assignmentType === 'election' && selectedElections.length > 0) || 
-      (assignmentType === 'electionGroup' && selectedElectionGroupId !== "") ||
-      (assignmentType === 'voterGroup' && selectedVoterGroupId !== "")
+      (assignmentType === "election" && selectedElections.length > 0) ||
+      (assignmentType === "voterGroup" && selectedVoterGroupId !== "")
     );
 
   return (
@@ -133,17 +118,27 @@ export function VoterBulkGenerator({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <Label htmlFor="prefix">Prefix</Label>
-            <Input
-              id="prefix"
-              value={prefix}
-              onChange={(e) => setPrefix(e.target.value)}
-              placeholder="e.g. VOTE"
-              className="mt-1"
-              disabled={isGenerating}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Will be used as username prefix
-            </p>
+            <div className="mt-1 flex gap-2">
+              <Input
+                id="prefix"
+                value={prefix}
+                onChange={(e) => setPrefix(e.target.value.toUpperCase())}
+                placeholder="e.g. KXRM"
+                className="flex-1 font-mono"
+                disabled={isGenerating}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                title="Generate new random prefix"
+                disabled={isGenerating}
+                onClick={() => setPrefix((current) => shufflePrefix(current))}
+              >
+                <Shuffle className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           <div>
             <Label htmlFor="startingNumber">Starting Number</Label>
@@ -180,17 +175,21 @@ export function VoterBulkGenerator({
           </div>
         </div>
 
+        <p className="text-xs text-blue-600 bg-blue-50 rounded p-2">
+          Usernames: <strong>{usernamePreview.from}</strong> to <strong>{usernamePreview.to}</strong> —
+          unique random passwords.
+        </p>
+
         {!fixedElectionId && (
           <div>
             <Label>Assignment Type</Label>
-            <Tabs 
-              defaultValue="election" 
-              className="mt-2" 
-              onValueChange={(value) => setAssignmentType(value as 'election' | 'electionGroup' | 'voterGroup')}
+            <Tabs
+              defaultValue="election"
+              className="mt-2"
+              onValueChange={(value) => setAssignmentType(value as "election" | "voterGroup")}
             >
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="election">Single Election</TabsTrigger>
-                <TabsTrigger value="electionGroup">Election Group</TabsTrigger>
                 <TabsTrigger value="voterGroup">Voter Group</TabsTrigger>
               </TabsList>
 
@@ -204,19 +203,13 @@ export function VoterBulkGenerator({
 
                     if (!id) return null;
                     return (
-                      <div key={id} className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id={`election-${id}`}
-                          value={id}
+                      <div key={id} className="flex items-center gap-2">
+                        <SelectCheckbox
                           checked={selectedElections.includes(id)}
-                          onChange={handleElectionChange}
-                          disabled={isGenerating}
-                          className="h-4 w-4 rounded border-gray-300"
+                          onCheckedChange={() => !isGenerating && toggleElectionId(id)}
+                          aria-label={`Select ${getElectionLabel(election)}`}
                         />
-                        <label htmlFor={`election-${id}`} className="text-sm">
-                          {election?.title || 'Untitled'} - {election?.organization || 'Organization'}
-                        </label>
+                        <span className="text-sm">{getElectionLabel(election)}</span>
                       </div>
                     );
                   })}
@@ -226,41 +219,6 @@ export function VoterBulkGenerator({
                   <div className="mt-2">
                     <p className="text-sm text-gray-600">
                       Voters will be assigned to {selectedElections.length} election(s)
-                    </p>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="electionGroup" className="mt-4">
-                <Label htmlFor="electionGroupAccess">Assign to Election Group</Label>
-                <Select onValueChange={handleElectionGroupChange} disabled={isGenerating}>
-                  <SelectTrigger id="electionGroupAccess" className="mt-1">
-                    <SelectValue placeholder="Select an election group" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {electionGroups && electionGroups.length > 0 ? (
-                      electionGroups.map((group) => {
-                        const id = group?._id?.toString() || 
-                                  (typeof group?.id === 'object' ? group.id?.toString() : 
-                                  (group?.id ? String(group.id) : ''));
-
-                        if (!id) return null;
-                        return (
-                          <SelectItem key={id} value={id}>
-                            {group?.name || 'Untitled Group'}
-                          </SelectItem>
-                        );
-                      })
-                    ) : (
-                      <SelectItem value="none" disabled>No election groups available</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-
-                {selectedElectionGroupId && (
-                  <div className="mt-2">
-                    <p className="text-sm text-gray-600">
-                      Voters will be assigned to all elections in this group
                     </p>
                   </div>
                 )}
@@ -280,20 +238,16 @@ export function VoterBulkGenerator({
                           key={id}
                           type="button"
                           disabled={isGenerating}
-                          onClick={() => {
-                            setSelectedVoterGroupId(id);
-                            if ((group as any).prefix) setPrefix((group as any).prefix);
-                          }}
+                          onClick={() => setSelectedVoterGroupId(id)}
                           className={cn(
                             "flex flex-col items-start gap-0.5 p-3 rounded-lg border-2 text-left transition-colors w-full",
                             isSelected
                               ? "border-primary bg-primary/5"
-                              : "border-gray-200 hover:border-primary/50 hover:bg-gray-50"
+                              : "border-gray-200 hover:border-primary/50 hover:bg-primary/5"
                           )}
                         >
                           <span className="text-sm font-medium text-gray-800 truncate w-full">{group?.name || 'Untitled Group'}</span>
                           <span className="text-xs text-gray-400">{group?.voters?.length || 0} voters</span>
-                          {(group as any).prefix && <span className="text-xs font-mono text-primary/70">prefix: {(group as any).prefix}</span>}
                         </button>
                       );
                     })}
@@ -353,7 +307,7 @@ export function VoterBulkGenerator({
                 const voterIds = group.voters || [];
                 const isAssigning = assigningGroupId === id;
                 return (
-                  <div key={id} className="flex items-center justify-between px-3 py-2 border rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div key={id} className="flex items-center justify-between px-3 py-2 border rounded-lg bg-white hover:bg-primary/10 transition-colors">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-gray-800 truncate">{group.name || 'Untitled Group'}</p>
                       <p className="text-xs text-gray-400">{voterIds.length} voters{group.description ? ` · ${group.description}` : ''}</p>

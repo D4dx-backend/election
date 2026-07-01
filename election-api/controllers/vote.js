@@ -3,8 +3,14 @@ const elections = require("../lib/supabase/elections");
 const nominees = require("../lib/supabase/nominees");
 const users = require("../lib/supabase/users");
 const { logUserActivity } = require("../utils/auditLog");
+const { denyUnlessCanAccessElection } = require("../lib/electionAccess");
 
 function computeElectedIds(sortedResults, election) {
+  if (election.manualWinnerSelection) {
+    const ids = Array.isArray(election.manualWinnerIds) ? election.manualWinnerIds : [];
+    return new Set(ids.map(String));
+  }
+
   const seats = Math.max(parseInt(election.numberToBeElected, 10) || 1, 1);
   const elected = new Set();
 
@@ -24,6 +30,32 @@ function computeElectedIds(sortedResults, election) {
   return elected;
 }
 
+exports.getElectionVoteDetails = async (req, res) => {
+  try {
+    const { electionId } = req.params;
+    const role = req.user && req.user.role;
+    if (!role || role === "voter") {
+      return res.status(403).json({ success: false, message: "Not authorized to view voting details." });
+    }
+
+    const election = await elections.findById(electionId);
+    if (!election) return res.status(404).json({ success: false, message: "Election not found." });
+    if (await denyUnlessCanAccessElection(req, res, election)) return;
+    if (!election.adminVotingDetailsEnabled) {
+      return res.status(403).json({
+        success: false,
+        message: "Admin voting details are not enabled for this election.",
+      });
+    }
+
+    const voteList = await votes.findByElection(electionId);
+    return res.status(200).json({ success: true, count: voteList.length, data: voteList });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
 exports.getElectionResults = async (req, res) => {
   try {
     const { electionId } = req.params;
@@ -31,7 +63,10 @@ exports.getElectionResults = async (req, res) => {
     if (!election) return res.status(404).json({ success: false, message: "Election not found." });
 
     const role = req.user && req.user.role;
-    const isVoter = !role || role === "voter";
+    const isVoter = role === "voter";
+
+    if (await denyUnlessCanAccessElection(req, res, election)) return;
+
     const displayMode = election.voterResultDisplay || "full";
     if (isVoter && !election.resultsPublished) {
       return res.status(403).json({ success: false, message: "Results have not been published yet." });
@@ -93,6 +128,13 @@ exports.getElectionResults = async (req, res) => {
           maleMinimum: election.maleMinimum || 0,
           femaleMinimum: election.femaleMinimum || 0,
           voterResultDisplay: displayMode,
+          ...(isVoter
+            ? {}
+            : {
+                adminVotingDetailsEnabled: !!election.adminVotingDetailsEnabled,
+                manualWinnerSelection: !!election.manualWinnerSelection,
+                manualWinnerIds: election.manualWinnerIds || [],
+              }),
         },
         totalBallots: isVoter && !showScore ? undefined : totalBallots,
         eligibleVoters,
@@ -147,6 +189,10 @@ exports.checkVoterStatus = async (req, res) => {
 
 exports.getMyVote = async (req, res) => {
   try {
+    const election = await elections.findById(req.params.electionId);
+    if (!election) return res.status(404).json({ success: false, message: "Election not found." });
+    if (await denyUnlessCanAccessElection(req, res, election)) return;
+
     const vote = await votes.findOne({
       voterId: req.user._id,
       electionId: req.params.electionId,

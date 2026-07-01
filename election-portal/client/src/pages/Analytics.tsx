@@ -24,7 +24,10 @@ import { ResultsTable } from "@/components/analytics/ResultsTable";
 import { VotingStats } from "@/components/analytics/VotingStats";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { getElectionLabel } from "@/lib/electionHelpers";
 import { generateElectionResultPdf } from "@/lib/resultPdf";
+import { AdminVotingDetailsPanel } from "@/components/elections/AdminVotingDetailsPanel";
+import { ManualWinnerPicker } from "@/components/elections/ManualWinnerPicker";
 import { Download, Printer } from "lucide-react";
 
 export default function Analytics({ embedded = false, electionId }: { embedded?: boolean; electionId?: string } = {}) {
@@ -32,6 +35,12 @@ export default function Analytics({ embedded = false, electionId }: { embedded?:
   const [resultAction, setResultAction] = useState<"print" | "export" | null>(null);
   const [preparedBy, setPreparedBy] = useState("");
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (electionId) {
+      setSelectedElectionId(electionId);
+    }
+  }, [electionId]);
 
   // Fetch elections for the selector (real data)
   const { data: electionsResponse } = useQuery({
@@ -98,7 +107,7 @@ export default function Analytics({ embedded = false, electionId }: { embedded?:
     if (!resultAction || !results || !selectedElection) return;
     try {
       await generateElectionResultPdf({
-        electionTitle: selectedElection.title,
+        electionTitle: getElectionLabel(selectedElection),
         organization: selectedElection.organization,
         electionDate: selectedElection.electionDate,
         results,
@@ -202,7 +211,7 @@ export default function Analytics({ embedded = false, electionId }: { embedded?:
                 <SelectContent>
                   {elections?.map((election: any) => (
                     <SelectItem key={election._id} value={election._id}>
-                      {election.title} - {election.organization}
+                      {getElectionLabel(election)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -223,6 +232,19 @@ export default function Analytics({ embedded = false, electionId }: { embedded?:
       )}
 
       {selectedElectionId && analytics && !analyticsLoading && (
+        <>
+          {selectedElection?.manualWinnerSelection && (
+            <ManualWinnerPicker
+              electionId={selectedElectionId}
+              enabled
+              numberToBeElected={selectedElection.numberToBeElected || 1}
+              nominees={nomineesWithVotes}
+              manualWinnerIds={selectedElection.manualWinnerIds || []}
+            />
+          )}
+          {selectedElection?.adminVotingDetailsEnabled && (
+            <AdminVotingDetailsPanel electionId={selectedElectionId} enabled />
+          )}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           <div className="lg:col-span-2">
             {nomineesWithVotes && selectedElection && !nomineesLoading && (
@@ -245,6 +267,7 @@ export default function Analytics({ embedded = false, electionId }: { embedded?:
             />
           </div>
         </div>
+        </>
       )}
 
       {selectedElectionId && (!analytics || analyticsLoading) && (
@@ -254,7 +277,7 @@ export default function Analytics({ embedded = false, electionId }: { embedded?:
       )}
 
       {!selectedElectionId && (
-        <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
           <h3 className="text-lg font-medium text-gray-700 mb-2">No Election Selected</h3>
           <p className="text-gray-500 mb-4">Please select an election to view analytics</p>
         </div>
@@ -289,7 +312,7 @@ export default function Analytics({ embedded = false, electionId }: { embedded?:
                 This name appears above the signature line on the printed/exported sheet.
               </p>
             </div>
-            <div className="rounded-md bg-gray-50 p-3 text-xs text-gray-600">
+            <div className="rounded-md bg-white p-3 text-xs text-gray-600">
               {results?.nominees?.length || 0} nominees · {results?.totalBallots ?? 0} votes · {results?.turnout ?? 0}% turnout
             </div>
           </div>

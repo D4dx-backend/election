@@ -31,11 +31,11 @@ export function FranchiseOverview({ stats }: FranchiseOverviewProps) {
         </div>
         
         <div className="grid grid-cols-2 gap-4 mb-4">
-          <div className="bg-gray-50 rounded-lg p-4">
+          <div className="bg-white rounded-lg p-4">
             <p className="text-sm font-medium text-gray-500">Total Franchises</p>
             <p className="text-xl font-semibold text-gray-900">{stats.totalFranchises}</p>
           </div>
-          <div className="bg-gray-50 rounded-lg p-4">
+          <div className="bg-white rounded-lg p-4">
             <p className="text-sm font-medium text-gray-500">Total Elections</p>
             <p className="text-xl font-semibold text-gray-900">{stats.totalElections}</p>
           </div>

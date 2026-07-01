@@ -10,11 +10,12 @@ import {
   DialogDescription
 } from "@/components/ui/dialog";
 import { User, Election } from "@/lib/types";
-
-type VoterForSlip = User & { plainPassword?: string; _id?: string };
+import { getElectionLabel } from "@/lib/electionHelpers";
 import { useToast } from "@/hooks/use-toast";
 import { Printer, FileDown } from "lucide-react";
 import jsPDF from "jspdf";
+
+type VoterForSlip = User & { plainPassword?: string; _id?: string };
 
 // Load the Vote+ logo once and cache it for PDF embedding/watermarking.
 let cachedLogo: HTMLImageElement | null = null;
@@ -83,7 +84,7 @@ export function BulkVoterSlipPrinter({
       });
       
       if (selectedElection) {
-        return [`${selectedElection.title} - ${selectedElection.organization}`];
+        return [getElectionLabel(selectedElection)];
       }
       return [];
     }
@@ -99,7 +100,7 @@ export function BulkVoterSlipPrinter({
         const electionId = election._id?.toString() || election.id?.toString();
         return electionId && voterElectionIds.includes(electionId);
       })
-      .map(election => `${election.title} - ${election.organization}`);
+      .map((election) => getElectionLabel(election));
   };
 
   const printBulkSlips = async () => {
@@ -290,7 +291,7 @@ export function BulkVoterSlipPrinter({
       return id === electionId;
     });
     
-    return election ? `${election.title} - ${election.organization}` : 'Unknown Election';
+    return election ? getElectionLabel(election) : 'Unknown Election';
   };
 
   return (
@@ -322,7 +323,7 @@ export function BulkVoterSlipPrinter({
             </div>
           </div>
           
-          <div className="bg-gray-50 rounded-md p-4">
+          <div className="bg-white rounded-md p-4">
             <p className="text-sm font-medium mb-2">Voter slips will include:</p>
             <ul className="list-disc pl-5 text-sm text-gray-600 space-y-1">
               <li>Username and password</li>
@@ -332,7 +333,7 @@ export function BulkVoterSlipPrinter({
             </ul>
           </div>
           
-          <div className="bg-gray-50 rounded-md p-4">
+          <div className="bg-white rounded-md p-4">
             <p className="text-sm font-medium">
               {selectedElectionId 
                 ? `Printing voter slips for: ${getElectionTitle(selectedElectionId)}`

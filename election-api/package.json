@@ -4,7 +4,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "migrate": "node scripts/run-migration.js",
+    "reset-password": "node scripts/reset-user-password.js"
   },
   "keywords": [],
   "author": "",
@@ -42,7 +44,8 @@
   },
   "devDependencies": {
     "case-sensitive-paths-webpack-plugin": "^2.4.0",
-    "nodemon": "^2.0.22"
+    "nodemon": "^2.0.22",
+    "pg": "^8.22.0"
   },
   "repository": {
     "type": "git",

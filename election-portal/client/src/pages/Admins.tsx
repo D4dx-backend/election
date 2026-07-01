@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
+import { getElectionLabel } from "@/lib/electionHelpers";
 import { 
   Card, 
   CardContent, 
@@ -17,7 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { PlusIcon, AlertCircle } from "lucide-react";
+import { PlusIcon, AlertCircle, Trash2 } from "lucide-react";
 import { 
   Dialog, 
   DialogContent, 
@@ -52,6 +53,9 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PaginationControls } from "@/components/ui/pagination-controls";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import type { Pagination } from "@/lib/types";
 
 // Schema for franchise admin creation
 const franchiseAdminSchema = z.object({
@@ -73,7 +77,7 @@ const electionAdminSchema = z.object({
 type FranchiseAdminFormValues = z.infer<typeof franchiseAdminSchema>;
 type ElectionAdminFormValues = z.infer<typeof electionAdminSchema>;
 
-type ListResponse<T> = { data: T[] };
+type ListResponse<T> = { data: T[]; pagination?: Pagination };
 
 function asList<T>(value: T[] | ListResponse<T> | undefined): T[] {
   if (Array.isArray(value)) return value;
@@ -100,7 +104,20 @@ interface FranchiseAdminUser {
   username: string;
   fullName?: string;
   status?: string;
-  franchiseDetails?: { name?: string };
+  franchiseId?: string;
+  franchiseDetails?: { _id?: string; name?: string };
+}
+
+function resolveFranchiseName(
+  admin: Pick<FranchiseAdminUser, "franchiseId" | "franchiseDetails">,
+  franchises: AdminFranchiseOption[]
+): string {
+  if (admin.franchiseDetails?.name) return admin.franchiseDetails.name;
+  if (!admin.franchiseId) return "-";
+  const match = franchises.find(
+    (f) => String(f._id) === String(admin.franchiseId) || String(f.id) === String(admin.franchiseId)
+  );
+  return match?.name || "-";
 }
 
 export default function Admins() {
@@ -116,6 +133,12 @@ export default function Admins() {
   const userFranchiseId = userData?.franchiseId || '';
   // Only super admins may create franchise administrators
   const canCreateFranchiseAdmin = userRole === 'super_admin';
+  const canDeleteAdmin = userRole === 'super_admin';
+  const currentUserId = String(userData?.id || userData?._id || '');
+  const [franchiseAdminsPage, setFranchiseAdminsPage] = useState(1);
+  const [pendingDeleteAdminId, setPendingDeleteAdminId] = useState<string | null>(null);
+  const [pendingDeleteAdminName, setPendingDeleteAdminName] = useState('');
+  const franchiseAdminsPageSize = 10;
   
   // --- Fetch data ---
   
@@ -133,10 +156,19 @@ export default function Admins() {
     data: franchiseAdminsRaw,
     isLoading: franchiseAdminsLoading,
     isError: franchiseAdminsError
-  } = useQuery<FranchiseAdminUser[] | ListResponse<FranchiseAdminUser>>({
-    queryKey: ['/api/users/franchise-admins']
+  } = useQuery<ListResponse<FranchiseAdminUser>>({
+    queryKey: ['/api/users/franchise-admins', franchiseAdminsPage],
+    queryFn: async () => {
+      const res = await apiRequest(
+        'GET',
+        `/api/users/franchise-admins?page=${franchiseAdminsPage}&limit=${franchiseAdminsPageSize}`
+      );
+      return res.json();
+    },
+    enabled: canCreateFranchiseAdmin,
   });
   const franchiseAdminList = asList(franchiseAdminsRaw);
+  const franchiseAdminsPagination = franchiseAdminsRaw?.pagination;
   
   // Fetch elections (for election admin creation)
   const {
@@ -268,6 +300,36 @@ export default function Admins() {
       });
     }
   });
+
+  const deleteAdminMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest('DELETE', `/api/users/${id}`);
+    },
+    onSuccess: () => {
+      setPendingDeleteAdminId(null);
+      setPendingDeleteAdminName('');
+      toast({
+        title: 'Administrator deleted',
+        description: 'The administrator has been removed successfully.',
+        variant: 'success',
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/users/franchise-admins'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/users/election-admins'] });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Error',
+        description: `Failed to delete administrator: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: 'destructive',
+      });
+      setPendingDeleteAdminId(null);
+    },
+  });
+
+  const handleDeleteAdminClick = (admin: FranchiseAdminUser) => {
+    setPendingDeleteAdminId(admin._id);
+    setPendingDeleteAdminName(admin.username);
+  };
   
   useEffect(() => {
     document.title = "Administrators | Vote+";
@@ -547,7 +609,7 @@ export default function Admins() {
                                       className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                                     />
                                     <label htmlFor={`election-${electionId}`} className="text-sm font-medium text-gray-700">
-                                      {election.title}{election.organization ? ` - ${election.organization}` : ""}
+                                      {getElectionLabel(election)}
                                     </label>
                                   </div>
                                 );
@@ -619,16 +681,17 @@ export default function Admins() {
                           className={
                             admin.status === 'active' 
                               ? 'bg-green-100 text-green-800 hover:bg-green-100' 
-                              : 'bg-gray-100 text-gray-800 hover:bg-gray-100'
+                              : 'bg-gray-100 text-gray-800 hover:bg-primary/10'
                           }
                         >
                           {admin.status === 'active' ? 'Active' : 'Inactive'}
                         </Badge>
                       </div>
-                      <div className="rounded-md bg-gray-50 p-3 text-sm">
+                      <div className="rounded-md bg-white p-3 text-sm">
                         <p className="text-xs text-gray-500">Franchise</p>
-                        <p className="font-medium text-gray-900">{admin.franchiseDetails ? admin.franchiseDetails.name : '-'}</p>
+                        <p className="font-medium text-gray-900">{resolveFranchiseName(admin, franchiseList)}</p>
                       </div>
+                      <div className="flex flex-wrap gap-2">
                       <Button 
                         variant="ghost"
                         size="sm"
@@ -647,6 +710,18 @@ export default function Admins() {
                       >
                         Reset Password
                       </Button>
+                      {canDeleteAdmin && String(admin._id) !== currentUserId && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => handleDeleteAdminClick(admin)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                      )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -667,7 +742,7 @@ export default function Admins() {
                           <TableCell className="font-medium">{admin.username}</TableCell>
                           <TableCell>{admin.fullName || '-'}</TableCell>
                           <TableCell>
-                            {admin.franchiseDetails ? admin.franchiseDetails.name : '-'}
+                            {resolveFranchiseName(admin, franchiseList)}
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -675,13 +750,14 @@ export default function Admins() {
                               className={
                                 admin.status === 'active' 
                                   ? 'bg-green-100 text-green-800 hover:bg-green-100' 
-                                  : 'bg-gray-100 text-gray-800 hover:bg-gray-100'
+                                  : 'bg-gray-100 text-gray-800 hover:bg-primary/10'
                               }
                             >
                               {admin.status === 'active' ? 'Active' : 'Inactive'}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
                             <Button 
                               variant="link" 
                               onClick={() => {
@@ -699,12 +775,33 @@ export default function Admins() {
                             >
                               Reset Password
                             </Button>
+                            {canDeleteAdmin && String(admin._id) !== currentUserId && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => handleDeleteAdminClick(admin)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                Delete
+                              </Button>
+                            )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
                   </TableBody>
                 </Table>
                 </div>
+                {franchiseAdminsPagination && franchiseAdminsPagination.total > 0 && (
+                  <PaginationControls
+                    page={franchiseAdminsPagination.page}
+                    totalPages={franchiseAdminsPagination.totalPages ?? 1}
+                    total={franchiseAdminsPagination.total}
+                    pageSize={franchiseAdminsPagination.pageSize}
+                    onPageChange={setFranchiseAdminsPage}
+                  />
+                )}
                 </>
               ) : (
                 <div className="py-6 text-center text-sm text-gray-500">No franchise administrators found</div>
@@ -734,6 +831,29 @@ export default function Admins() {
           </CardContent>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDeleteAdminId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingDeleteAdminId(null);
+            setPendingDeleteAdminName('');
+          }
+        }}
+        onConfirm={() => {
+          if (pendingDeleteAdminId) {
+            deleteAdminMutation.mutate(pendingDeleteAdminId);
+          }
+        }}
+        loading={deleteAdminMutation.isPending}
+        title="Delete administrator"
+        description={
+          pendingDeleteAdminName
+            ? `Remove "${pendingDeleteAdminName}" permanently? This cannot be undone.`
+            : 'Remove this administrator permanently? This cannot be undone.'
+        }
+        confirmText="Delete"
+      />
     </MainLayout>
   );
 }

@@ -256,7 +256,7 @@ export function ElectionResultActions({
                   This name appears above the signature line on the printed sheet.
                 </p>
               </div>
-              <div className="rounded-md bg-gray-50 p-3 text-xs text-gray-600 flex items-center gap-2">
+              <div className="rounded-md bg-white p-3 text-xs text-gray-600 flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
                 {results?.nominees?.length || 0} nominees · {results?.totalBallots ?? 0} votes ·{" "}
                 {results?.turnout ?? 0}% turnout

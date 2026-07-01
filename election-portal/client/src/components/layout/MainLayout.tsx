@@ -2,6 +2,7 @@ import { ReactNode, useState, useEffect } from "react";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { BottomNav } from "./BottomNav";
+import { SiteFooter } from "./SiteFooter";
 import { cn } from "@/lib/utils";
 
 interface MainLayoutProps {
@@ -54,7 +55,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#F6F8FB]">
+    <div className="min-h-[100dvh] flex flex-col bg-white">
       <Header 
         toggleSidebar={toggleSidebar} 
         user={{
@@ -80,27 +81,17 @@ export function MainLayout({ children }: MainLayoutProps) {
       )}
 
       <main className={cn(
-        "py-6 px-4 sm:px-6 lg:px-8 min-h-screen transition-padding duration-300",
-        "pt-20", // Account for fixed header
-        "pb-24 lg:pb-6", // Account for the mobile bottom navigation
-        "lg:pl-72" // Always leave room for the fixed sidebar on large screens
+        "flex flex-1 flex-col w-full bg-white transition-padding duration-300",
+        "min-h-[calc(100dvh-4rem)]",
+        "py-6 px-4 sm:px-6 lg:px-8",
+        "pt-20",
+        "pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8",
+        "lg:pl-72"
       )}>
-        {children}
-
-        <footer className="mt-8 pt-4 border-t border-gray-200 text-center text-xs text-gray-400">
-          Powered by{" "}
-          <a
-            href="https://d4dx.co"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-semibold text-primary hover:underline"
-          >
-            D4DX.CO
-          </a>
-        </footer>
+        <div className="flex flex-1 flex-col">{children}</div>
+        <SiteFooter />
       </main>
 
-      {/* Mobile-first bottom navigation */}
       <BottomNav />
     </div>
   );

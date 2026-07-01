@@ -279,6 +279,52 @@ async function findVoterIdsByGroupId(groupId) {
   return (data || []).map((r) => r.user_id);
 }
 
+async function findGroupVotersPaginated(groupId, { page = 1, limit = 10 } = {}) {
+  if (!isUuid(groupId)) return { voters: [], total: 0 };
+
+  const supabase = getSupabase();
+  const pageNum = Math.max(page, 1);
+  const pageSize = Math.max(limit, 1);
+  const from = (pageNum - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  const { data: junction, count, error } = await supabase
+    .from("voter_group_voters")
+    .select("user_id", { count: "exact" })
+    .eq("voter_group_id", groupId)
+    .range(from, to);
+  if (error) throw error;
+
+  const voterIds = (junction || []).map((r) => r.user_id);
+  if (!voterIds.length) {
+    return { voters: [], total: count || 0 };
+  }
+
+  const { data: userRows, error: userErr } = await supabase
+    .from("users")
+    .select("id, username, status, registration_number, voter_prefix, voter_sequence_number")
+    .in("id", voterIds);
+  if (userErr) throw userErr;
+
+  const { attachElectionAccess } = require("./users");
+  const mapped = (userRows || []).map((u) => ({
+    _id: u.id,
+    id: u.id,
+    username: u.username,
+    status: u.status,
+    registrationNumber: u.registration_number,
+    voterMetadata:
+      u.voter_prefix || u.voter_sequence_number
+        ? { prefix: u.voter_prefix, sequenceNumber: u.voter_sequence_number }
+        : undefined,
+  }));
+  const withAccess = await attachElectionAccess(mapped);
+  const byId = new Map(withAccess.map((v) => [String(v.id || v._id), v]));
+  const voters = voterIds.map((id) => byId.get(String(id))).filter(Boolean);
+
+  return { voters, total: count || 0 };
+}
+
 async function findGroupsByElection(electionId) {
   const supabase = getSupabase();
   const { data, error } = await supabase
@@ -305,5 +351,6 @@ module.exports = {
   removeVotersFromGroup,
   syncGroupVotersAccess,
   findVoterIdsByGroupId,
+  findGroupVotersPaginated,
   findGroupsByElection,
 };

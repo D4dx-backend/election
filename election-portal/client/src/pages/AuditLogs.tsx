@@ -142,7 +142,7 @@ export default function AuditLogs() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b bg-gray-50 text-left text-gray-500">
+                    <tr className="border-b bg-white text-left text-gray-500">
                       <th className="px-4 py-3 font-medium">Action</th>
                       <th className="px-4 py-3 font-medium">Entity</th>
                       <th className="px-4 py-3 font-medium">User</th>
@@ -152,7 +152,7 @@ export default function AuditLogs() {
                   </thead>
                   <tbody>
                     {logs.map((log) => (
-                      <tr key={log._id} className="border-b last:border-0 transition-colors hover:bg-gray-50">
+                      <tr key={log._id} className="border-b last:border-0 transition-colors hover:bg-primary/5">
                         <td className="px-4 py-3">
                           <Badge className={actionColor(log.action)}>
                             {log.action || "Action"}

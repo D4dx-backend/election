@@ -16,8 +16,8 @@ interface PaginationControlsProps {
 }
 
 /**
- * Reusable server-side pagination footer (Previous / Next + range summary).
- * Renders nothing when there are no records.
+ * Reusable server-side pagination (Previous / Next + range summary).
+ * Centered layout, intended to sit just above the fixed site footer.
  */
 export function PaginationControls({
   page,
@@ -35,7 +35,7 @@ export function PaginationControls({
   return (
     <div
       className={cn(
-        "mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3",
+        "shrink-0 w-full flex flex-col items-center justify-center gap-3 pt-4 pb-1 text-center",
         className,
       )}
     >
@@ -44,7 +44,7 @@ export function PaginationControls({
         <span className="font-medium text-gray-700">{to}</span> of{" "}
         <span className="font-medium text-gray-700">{total}</span>
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -54,7 +54,7 @@ export function PaginationControls({
           <ChevronLeft className="h-4 w-4 mr-1" />
           Previous
         </Button>
-        <span className="text-sm text-gray-600">
+        <span className="text-sm text-gray-600 min-w-[6rem]">
           Page {page} of {totalPages}
         </span>
         <Button

@@ -1,9 +1,18 @@
 const elections = require("../lib/supabase/elections");
+const nominees = require("../lib/supabase/nominees");
 const { enrichElectionsWithCounts } = require("../lib/supabase/electionCounts");
 const { logUserActivity } = require("../utils/auditLog");
+const { denyUnlessCanAccessElection } = require("../lib/electionAccess");
 
 function normalizeElectionBody(body) {
-  ["selfRegOpen", "votingOpen", "resultsPublished", "genderBasedSelection"].forEach((key) => {
+  [
+    "selfRegOpen",
+    "votingOpen",
+    "resultsPublished",
+    "genderBasedSelection",
+    "adminVotingDetailsEnabled",
+    "manualWinnerSelection",
+  ].forEach((key) => {
     if (typeof body[key] === "string") {
       body[key] = body[key] === "true";
     }
@@ -14,8 +23,8 @@ function normalizeElectionBody(body) {
 exports.addElection = async (req, res) => {
   try {
     normalizeElectionBody(req.body);
-    if (req.file) {
-      req.body.logo = { url: `/uploads/${req.file.filename}`, alt: req.body.title };
+    if (req.file?.cdnUrl) {
+      req.body.logo = { url: req.file.cdnUrl, alt: req.body.title };
     }
     const election = await elections.create(req.body);
     await logUserActivity(req.user._id, req.ip, "Created", election.title, "Election");
@@ -30,6 +39,7 @@ exports.getElectionById = async (req, res) => {
   try {
     const election = await elections.findById(req.params.id);
     if (!election) return res.status(404).json({ success: false, message: "Election not found." });
+    if (await denyUnlessCanAccessElection(req, res, election)) return;
     const [enriched] = await enrichElectionsWithCounts([election]);
     res.status(200).json({ success: true, data: enriched });
   } catch (err) {
@@ -38,11 +48,25 @@ exports.getElectionById = async (req, res) => {
   }
 };
 
+const LOCKED_ELECTION_STATUSES = new Set(["completed", "archived"]);
+
 exports.updateElectionById = async (req, res) => {
   try {
+    const existing = await elections.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Election not found." });
+    }
+    if (LOCKED_ELECTION_STATUSES.has(existing.status)) {
+      return res.status(403).json({
+        success: false,
+        message: "Completed or archived elections cannot be edited.",
+      });
+    }
+    if (await denyUnlessCanAccessElection(req, res, existing)) return;
+
     normalizeElectionBody(req.body);
-    if (req.file) {
-      req.body.logo = { url: `/uploads/${req.file.filename}`, alt: req.body.title };
+    if (req.file?.cdnUrl) {
+      req.body.logo = { url: req.file.cdnUrl, alt: req.body.title };
     }
     const election = await elections.updateById(req.params.id, req.body);
     if (!election) return res.status(404).json({ success: false, message: "Election not found." });
@@ -55,6 +79,18 @@ exports.updateElectionById = async (req, res) => {
 
 exports.deleteElectionById = async (req, res) => {
   try {
+    const existing = await elections.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Election not found." });
+    }
+    if (LOCKED_ELECTION_STATUSES.has(existing.status)) {
+      return res.status(403).json({
+        success: false,
+        message: "Completed or archived elections cannot be deleted.",
+      });
+    }
+    if (await denyUnlessCanAccessElection(req, res, existing)) return;
+
     const election = await elections.deleteById(req.params.id);
     if (!election) return res.status(404).json({ success: false, message: "Election not found." });
     res.status(200).json({ success: true, message: "Election deleted." });
@@ -64,8 +100,57 @@ exports.deleteElectionById = async (req, res) => {
   }
 };
 
+exports.setManualWinners = async (req, res) => {
+  try {
+    const election = await elections.findById(req.params.id);
+    if (!election) return res.status(404).json({ success: false, message: "Election not found." });
+    if (await denyUnlessCanAccessElection(req, res, election)) return;
+    if (!election.manualWinnerSelection) {
+      return res.status(400).json({
+        success: false,
+        message: "Manual winner selection is not enabled for this election.",
+      });
+    }
+
+    const { nomineeIds } = req.body;
+    if (!Array.isArray(nomineeIds)) {
+      return res.status(400).json({ success: false, message: "nomineeIds array is required." });
+    }
+
+    const seats = Math.max(parseInt(election.numberToBeElected, 10) || 1, 1);
+    const uniqueIds = [...new Set(nomineeIds.map((id) => String(id)))];
+    if (uniqueIds.length > seats) {
+      return res.status(400).json({
+        success: false,
+        message: `Select at most ${seats} winner(s).`,
+      });
+    }
+
+    if (uniqueIds.length) {
+      const validNominees = await nominees.findByIdsAndElection(uniqueIds, req.params.id);
+      if (validNominees.length !== uniqueIds.length) {
+        return res.status(400).json({
+          success: false,
+          message: "One or more nominees are invalid for this election.",
+        });
+      }
+    }
+
+    const updated = await elections.updateById(req.params.id, { manualWinnerIds: uniqueIds });
+    await logUserActivity(req.user._id, req.ip, "Set Manual Winners", election.title, "Election");
+    res.status(200).json({ success: true, data: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.toString() });
+  }
+};
+
 exports.publishResults = async (req, res) => {
   try {
+    const existing = await elections.findById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, message: "Election not found." });
+    if (await denyUnlessCanAccessElection(req, res, existing)) return;
+
     const publish = req.body.publish === undefined ? true : req.body.publish === true || req.body.publish === "true";
     const update = {
       resultsPublished: publish,

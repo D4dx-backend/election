@@ -12,97 +12,178 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
 import { Link, useLocation } from "wouter";
 import { ElectionStatus, ElectionWithDetails } from "@/lib/types";
-import { DropdownMenuItem, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { RowSelectCheckbox } from "@/components/ui/row-select-checkbox";
 import { MoreHorizontal, Activity, Trash2, Pencil } from "lucide-react";
+import { getElectionLabel, isElectionEditable } from "@/lib/electionHelpers";
+
+function getElectionId(election: ElectionWithDetails) {
+  return election._id?.toString() || election.id?.toString() || "";
+}
+
+function ElectionMobileActions({
+  id,
+  status,
+  onDelete,
+  onStatusChange,
+  onNavigate,
+  selectionMode,
+  selected,
+  onToggleSelect,
+}: {
+  id: string;
+  status: string;
+  onDelete?: (id: string) => void;
+  onStatusChange?: (id: string, status: ElectionStatus) => void;
+  onNavigate: (path: string) => void;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
+}) {
+  const editable = isElectionEditable(status);
+  const canDelete = editable;
+
+  if (selectionMode && onToggleSelect) {
+    return (
+      <RowSelectCheckbox
+        checked={selected}
+        onCheckedChange={() => onToggleSelect(id)}
+        aria-label="Select election"
+        onClick={(e) => e.stopPropagation()}
+      />
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0"
+          aria-label="Election actions"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuItem onClick={() => onNavigate(`/elections/${id}`)}>
+          Open election
+        </DropdownMenuItem>
+        {editable ? (
+          <DropdownMenuItem onClick={() => onNavigate(`/elections/${id}/edit`)}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={() => onNavigate(`/elections/${id}?tab=results`)}>
+            View results
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => onStatusChange?.(id, "draft")}>
+          <Activity className="mr-2 h-4 w-4" /> Set as Draft
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onStatusChange?.(id, "active")}>
+          <Activity className="mr-2 h-4 w-4" /> Set as Active
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onStatusChange?.(id, "completed")}>
+          <Activity className="mr-2 h-4 w-4" /> Set as Completed
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onStatusChange?.(id, "archived")}>
+          <Activity className="mr-2 h-4 w-4" /> Set as Archived
+        </DropdownMenuItem>
+        {canDelete && onDelete && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-red-600 focus:text-red-600"
+              onClick={() => onDelete(id)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" /> Delete
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 interface ElectionsTableProps {
   elections: ElectionWithDetails[];
   onDelete?: (id: string) => void;
   onStatusChange?: (id: string, status: ElectionStatus) => void;
+  selectionMode?: boolean;
+  isSelected?: (id: string) => boolean;
+  onToggleSelect?: (id: string) => void;
+  allSelected?: boolean;
+  someSelected?: boolean;
+  onToggleSelectAll?: () => void;
 }
 
-export function ElectionsTable({ elections, onDelete, onStatusChange }: ElectionsTableProps) {
+export function ElectionsTable({
+  elections,
+  onDelete,
+  onStatusChange,
+  selectionMode = false,
+  isSelected,
+  onToggleSelect,
+  allSelected = false,
+  someSelected = false,
+  onToggleSelectAll,
+}: ElectionsTableProps) {
   const [, navigate] = useLocation();
 
   return (
-    <Card>
-      <CardHeader className="px-6 py-4 border-b border-gray-200">
+    <Card className="border border-gray-200 md:shadow-sm shadow-none">
+      <CardHeader className="hidden md:flex px-6 py-4 border-b border-gray-200">
         <CardTitle className="text-lg font-medium text-gray-900">Elections</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="divide-y divide-gray-100 md:hidden">
+        <div className="md:hidden mx-0 overflow-hidden rounded-xl border border-gray-200 bg-white">
           {elections.map((election) => {
-            const id = election._id?.toString() || election.id?.toString() || "";
+            const id = getElectionId(election);
+            const editable = isElectionEditable(election.status);
+            const deletable = editable;
+            const dateLabel = election.electionDate
+              ? format(new Date(election.electionDate), "MMM d, yyyy")
+              : "—";
+            const meta = `${dateLabel} · ${election.nomineeCount ?? 0} nominees · ${election.voterCount ?? 0} voters`;
+
             return (
               <div
                 key={id}
-                className="p-4 space-y-4 cursor-pointer transition-colors duration-150 hover:bg-gray-50 active:bg-gray-100"
+                className="flex items-center gap-3 p-4 cursor-pointer transition-colors hover:bg-primary/5 active:bg-primary/10 border-b border-gray-200 last:border-b-0"
                 onClick={() => navigate(`/elections/${id}`)}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs text-gray-400 mb-1">EL-{id.substring(0, 4)}</p>
-                    <h3 className="font-semibold text-gray-900 leading-tight">{election.title}</h3>
-                    <p className="text-sm text-gray-500 mt-1">{election.organization}</p>
+                {selectionMode && deletable && onToggleSelect && isSelected && (
+                  <RowSelectCheckbox
+                    checked={isSelected(id)}
+                    onCheckedChange={() => onToggleSelect(id)}
+                    aria-label={`Select ${getElectionLabel(election)}`}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-semibold text-gray-900 leading-tight truncate">
+                      {getElectionLabel(election)}
+                    </h3>
+                    <StatusBadge status={election.status} />
                   </div>
-                  <StatusBadge status={election.status} />
+                  <p className="text-xs text-gray-400 mt-1 truncate">{meta}</p>
                 </div>
-
-                <div className="grid grid-cols-3 gap-3 rounded-md bg-gray-50 p-3 text-sm">
-                  <div>
-                    <p className="text-xs text-gray-500">Date</p>
-                    <p className="font-medium text-gray-900">{format(new Date(election.electionDate), 'yyyy-MM-dd')}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Nominees</p>
-                    <p className="font-medium text-gray-900">{election.nomineeCount ?? 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Voters</p>
-                    <p className="font-medium text-gray-900">{election.voterCount ?? 0}</p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2" onClick={(event) => event.stopPropagation()}>
-                  <Link href={`/elections/${id}/edit`}>
-                    <Button variant="ghost" size="sm" className="h-9">
-                      <Pencil className="h-4 w-4 mr-1" />
-                      {election.status === 'completed' ? 'Results' : 'Edit'}
-                    </Button>
-                  </Link>
-                  {election.status !== 'completed' && election.status !== 'archived' && onDelete && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-9 text-red-600 hover:text-red-900 hover:bg-red-50"
-                      onClick={() => onDelete(id)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </Button>
-                  )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-9 ml-auto">
-                        <MoreHorizontal className="h-4 w-4 mr-1" /> More
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onStatusChange?.(id, 'draft')}>
-                        <Activity className="mr-2 h-4 w-4" /> Set as Draft
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onStatusChange?.(id, 'active')}>
-                        <Activity className="mr-2 h-4 w-4" /> Set as Active
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onStatusChange?.(id, 'completed')}>
-                        <Activity className="mr-2 h-4 w-4" /> Set as Completed
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onStatusChange?.(id, 'archived')}>
-                        <Activity className="mr-2 h-4 w-4" /> Set as Archived
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                <ElectionMobileActions
+                  id={id}
+                  status={election.status}
+                  onDelete={selectionMode ? undefined : onDelete}
+                  onStatusChange={selectionMode ? undefined : onStatusChange}
+                  onNavigate={navigate}
+                  selectionMode={selectionMode && deletable}
+                  selected={isSelected?.(id)}
+                  onToggleSelect={onToggleSelect}
+                />
               </div>
             );
           })}
@@ -112,32 +193,48 @@ export function ElectionsTable({ elections, onDelete, onStatusChange }: Election
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="bg-gray-50">ID</TableHead>
-                <TableHead className="bg-gray-50">Election</TableHead>
-                <TableHead className="bg-gray-50">Organization</TableHead>
-                <TableHead className="bg-gray-50">Date</TableHead>
-                <TableHead className="bg-gray-50">Positions</TableHead>
-                <TableHead className="bg-gray-50">Nominees</TableHead>
-                <TableHead className="bg-gray-50">Voters</TableHead>
-                <TableHead className="bg-gray-50">Status</TableHead>
-                <TableHead className="bg-gray-50 text-right">Actions</TableHead>
+                {selectionMode && onToggleSelectAll && (
+                  <TableHead className="bg-white w-6 px-1">
+                    <RowSelectCheckbox
+                      checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                      onCheckedChange={() => onToggleSelectAll()}
+                      aria-label="Select all deletable elections on this page"
+                    />
+                  </TableHead>
+                )}
+                <TableHead className="bg-white">Election</TableHead>
+                <TableHead className="bg-white">Date</TableHead>
+                <TableHead className="bg-white">Positions</TableHead>
+                <TableHead className="bg-white">Nominees</TableHead>
+                <TableHead className="bg-white">Voters</TableHead>
+                <TableHead className="bg-white">Status</TableHead>
+                <TableHead className="bg-white text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {elections.map((election) => (
+              {elections.map((election) => {
+                const electionId = getElectionId(election);
+                const editable = isElectionEditable(election.status);
+            const deletable = editable;
+                return (
                 <TableRow
                   key={election._id || election.id}
-                  className="hover:bg-gray-50 cursor-pointer transition-colors duration-150"
-                  onClick={() => navigate(`/elections/${election._id?.toString() || election.id?.toString() || ''}`)}
+                  className="hover:bg-primary/5 cursor-pointer transition-colors duration-150"
+                  onClick={() => navigate(`/elections/${electionId}`)}
                 >
-                  <TableCell className="text-sm text-gray-500">
-                    EL-{(election._id?.toString() || election.id?.toString() || '').substring(0, 4)}
-                  </TableCell>
+                  {selectionMode && onToggleSelect && isSelected && (
+                    <TableCell className="w-6 px-1" onClick={(event) => event.stopPropagation()}>
+                      {deletable ? (
+                        <RowSelectCheckbox
+                          checked={isSelected(electionId)}
+                          onCheckedChange={() => onToggleSelect(electionId)}
+                          aria-label={`Select ${getElectionLabel(election)}`}
+                        />
+                      ) : null}
+                    </TableCell>
+                  )}
                   <TableCell className="font-medium">
-                    {election.title}
-                  </TableCell>
-                  <TableCell>
-                    {election.organization}
+                    {getElectionLabel(election)}
                   </TableCell>
                   <TableCell>
                     {format(new Date(election.electionDate), 'yyyy-MM-dd')}
@@ -155,25 +252,32 @@ export function ElectionsTable({ elections, onDelete, onStatusChange }: Election
                     <StatusBadge status={election.status} />
                   </TableCell>
                   <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                    <Link href={`/elections/${election._id?.toString() || election.id?.toString()}/edit`}>
-                      <Button variant="ghost" size="sm" className="mr-1">
-                        <Pencil className="h-4 w-4 mr-1" />
-                        {election.status === 'completed' ? 'Results' : 'Edit'}
-                      </Button>
-                    </Link>
-                    {election.status !== 'completed' && election.status !== 'archived' && onDelete && (
+                    {!selectionMode && (
+                      <>
+                    {editable ? (
+                      <Link href={`/elections/${electionId}/edit`}>
+                        <Button variant="ghost" size="sm" className="mr-1">
+                          <Pencil className="h-4 w-4 mr-1" />
+                          Edit
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Link href={`/elections/${electionId}?tab=results`}>
+                        <Button variant="ghost" size="sm" className="mr-1">
+                          View results
+                        </Button>
+                      </Link>
+                    )}
+                    {deletable && onDelete && (
                       <Button 
                         variant="ghost"
                         size="sm"
                         className="mr-1 text-red-600 hover:text-red-900 hover:bg-red-50"
-                        onClick={() => onDelete(election._id?.toString() || election.id?.toString() || '')}
+                        onClick={() => onDelete(electionId)}
                       >
                         <Trash2 className="h-4 w-4 mr-1" />
                         Delete
                       </Button>
-                    )}
-                    {(election.status === 'completed' || election.status === 'archived') && (
-                      <span className="text-gray-400 cursor-not-allowed">Delete</span>
                     )}
                     
                     <DropdownMenu>
@@ -183,26 +287,33 @@ export function ElectionsTable({ elections, onDelete, onStatusChange }: Election
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => onStatusChange?.(election._id || election.id?.toString() || '', 'draft')}>
+                        <DropdownMenuItem onClick={() => onStatusChange?.(electionId, 'draft')}>
                           <Activity className="mr-2 h-4 w-4" /> Set as Draft
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onStatusChange?.(election._id || election.id?.toString() || '', 'active')}>
+                        <DropdownMenuItem onClick={() => onStatusChange?.(electionId, 'active')}>
                           <Activity className="mr-2 h-4 w-4" /> Set as Active
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onStatusChange?.(election._id || election.id?.toString() || '', 'completed')}>
+                        <DropdownMenuItem onClick={() => onStatusChange?.(electionId, 'completed')}>
                           <Activity className="mr-2 h-4 w-4" /> Set as Completed
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onStatusChange?.(election._id || election.id?.toString() || '', 'archived')}>
+                        <DropdownMenuItem onClick={() => onStatusChange?.(electionId, 'archived')}>
                           <Activity className="mr-2 h-4 w-4" /> Set as Archived
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onDelete?.(election._id?.toString() || election.id?.toString() || '')}>
-                          <Trash2 className="mr-2 h-4 w-4" /> Delete
-                        </DropdownMenuItem>
+                        {deletable && onDelete && (
+                          <DropdownMenuItem
+                            className="text-red-600 focus:text-red-600"
+                            onClick={() => onDelete(electionId)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" /> Delete
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                      </>
+                    )}
                   </TableCell>
                 </TableRow>
-              ))}
+              );})}
             </TableBody>
           </Table>
         </div>
@@ -227,7 +338,7 @@ function StatusBadge({ status }: { status: string }) {
       );
     case 'draft':
       return (
-        <Badge variant="outline" className="bg-gray-100 text-gray-800 hover:bg-gray-100">
+        <Badge variant="outline" className="bg-gray-100 text-gray-800 hover:bg-primary/10">
           Draft
         </Badge>
       );
@@ -239,7 +350,7 @@ function StatusBadge({ status }: { status: string }) {
       );
     default:
       return (
-        <Badge variant="outline" className="bg-gray-100 text-gray-800 hover:bg-gray-100">
+        <Badge variant="outline" className="bg-gray-100 text-gray-800 hover:bg-primary/10">
           {status}
         </Badge>
       );

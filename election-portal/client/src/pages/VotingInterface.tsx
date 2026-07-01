@@ -50,7 +50,7 @@ export default function VotingInterface() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-white">
         <Card className="w-full max-w-4xl mx-auto">
           <CardContent className="p-8 text-center">
             <p>Loading election details...</p>
@@ -62,7 +62,7 @@ export default function VotingInterface() {
 
   if (error || !electionWithDetails) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-white">
         <Card className="w-full max-w-4xl mx-auto">
           <CardContent className="p-8 text-center">
             <h2 className="text-xl font-bold text-red-600 mb-2">Error</h2>
@@ -78,7 +78,7 @@ export default function VotingInterface() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
+    <div className="min-h-screen bg-white py-12 px-4">
       <div className="max-w-4xl mx-auto">
         {voteSubmitted ? (
           <VoteConfirmation onReturn={handleReturnToDashboard} />

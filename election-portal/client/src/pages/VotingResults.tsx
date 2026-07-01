@@ -3,6 +3,7 @@ import { useParams, useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import VoterLayout from '@/components/layouts/VoterLayout';
+import { getElectionLabel } from '@/lib/electionHelpers';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -138,8 +139,7 @@ export default function VotingResults() {
 
         {/* ── Election info card ── */}
         <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 mb-4">
-          <h1 className="font-bold text-lg text-gray-900 dark:text-white leading-snug">{election?.title}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{election?.organization}</p>
+          <h1 className="font-bold text-lg text-gray-900 dark:text-white leading-snug">{election ? getElectionLabel(election) : ''}</h1>
           {election?.electionDate && (
             <div className="flex items-center gap-1.5 mt-2 text-xs text-gray-400">
               <Calendar className="h-3.5 w-3.5" />

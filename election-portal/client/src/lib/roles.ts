@@ -36,14 +36,6 @@ export function canAccessPath(role: string | undefined, path: string): boolean {
     return false;
   }
 
-  const franchiseAdminOnly = ["/election-groups"];
-  if (
-    role === "election_admin" &&
-    franchiseAdminOnly.some((p) => path === p || path.startsWith(`${p}/`))
-  ) {
-    return false;
-  }
-
   const voterOnly = ["/voting"];
   if (voterOnly.some((p) => path === p)) return false;
 

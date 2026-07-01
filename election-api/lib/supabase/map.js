@@ -1,3 +1,5 @@
+const { resolvePublicImageUrl } = require("../spacesStorage");
+
 function mapUser(row, extras = {}) {
   if (!row) return null;
   const user = {
@@ -57,7 +59,9 @@ function mapFranchise(row) {
     _id: row.id,
     id: row.id,
     name: row.name,
-    logo: row.logo_url ? { url: row.logo_url, alt: row.logo_alt } : undefined,
+    logo: row.logo_url
+      ? { url: resolvePublicImageUrl(row.logo_url), alt: row.logo_alt }
+      : undefined,
     status: row.status,
     settings: row.settings || {},
     createdAt: row.created_at,
@@ -97,11 +101,16 @@ function mapElection(row) {
     resultsPublished: row.results_published,
     resultsPublishedAt: row.results_published_at,
     voterResultDisplay: row.voter_result_display,
+    adminVotingDetailsEnabled: row.admin_voting_details_enabled,
+    manualWinnerSelection: row.manual_winner_selection,
+    manualWinnerIds: Array.isArray(row.manual_winner_ids) ? row.manual_winner_ids : [],
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     status: row.status,
-    logo: row.logo_url ? { url: row.logo_url, alt: row.logo_alt } : undefined,
+    logo: row.logo_url
+      ? { url: resolvePublicImageUrl(row.logo_url), alt: row.logo_alt }
+      : undefined,
     electionGroupId: row.election_group_id,
   };
 }
@@ -124,6 +133,11 @@ function electionToRow(data) {
   if (data.resultsPublished !== undefined) row.results_published = data.resultsPublished;
   if (data.resultsPublishedAt !== undefined) row.results_published_at = data.resultsPublishedAt;
   if (data.voterResultDisplay !== undefined) row.voter_result_display = data.voterResultDisplay;
+  if (data.adminVotingDetailsEnabled !== undefined) {
+    row.admin_voting_details_enabled = data.adminVotingDetailsEnabled;
+  }
+  if (data.manualWinnerSelection !== undefined) row.manual_winner_selection = data.manualWinnerSelection;
+  if (data.manualWinnerIds !== undefined) row.manual_winner_ids = data.manualWinnerIds;
   if (data.createdBy !== undefined) row.created_by = data.createdBy;
   if (data.status !== undefined) row.status = data.status;
   if (data.electionGroupId !== undefined) row.election_group_id = data.electionGroupId;
@@ -142,8 +156,11 @@ function mapNominee(row) {
     name: row.name,
     gender: row.gender,
     position: row.position,
-    photo: row.photo_url ? { url: row.photo_url, alt: row.photo_alt } : undefined,
+    photo: row.photo_url
+      ? { url: resolvePublicImageUrl(row.photo_url), alt: row.photo_alt }
+      : undefined,
     bio: row.bio,
+    description: row.bio,
     additionalInfo: row.additional_info,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -158,6 +175,7 @@ function nomineeToRow(data) {
   if (data.gender !== undefined) row.gender = data.gender;
   if (data.position !== undefined) row.position = data.position;
   if (data.bio !== undefined) row.bio = data.bio;
+  if (data.description !== undefined) row.bio = data.description || null;
   if (data.additionalInfo !== undefined) row.additional_info = data.additionalInfo;
   if (data.status !== undefined) row.status = data.status;
   if (data.photo?.url !== undefined) row.photo_url = data.photo.url;

@@ -1,4 +1,5 @@
-﻿import { useEffect, useState, Fragment } from "react";
+import { useEffect, useState, Fragment } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
+import { SelectCheckbox } from "@/components/ui/row-select-checkbox";
 import {
   Dialog,
   DialogContent,
@@ -22,10 +23,41 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { AlertCircle, Users, PlusCircle, Trash2, ArrowLeft, Settings2, Loader2, Search, UserPlus } from "lucide-react";
+import { DeleteModeBar } from "@/components/ui/delete-mode-bar";
+import { DeleteModeButton } from "@/components/ui/delete-mode-button";
+import { RowSelectCheckbox } from "@/components/ui/row-select-checkbox";
+import { useBulkDeleteMode } from "@/hooks/useBulkDeleteMode";
+import { deleteByIds } from "@/lib/bulkDelete";
+import { AlertCircle, Users, PlusCircle, Trash2, ArrowLeft, Settings2, Loader2, Link2, Shuffle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { getElectionLabel, getElectionSubtitle } from "@/lib/electionHelpers";
 import { PaginationControls } from "@/components/ui/pagination-controls";
+import { PageContent, PageBottom } from "@/components/layout/PageContent";
 import { Pagination } from "@/lib/types";
 import { VoterSlipPrinter } from "@/components/voters/VoterSlipPrinter";
+import { BulkVoterSlipPrinter } from "@/components/voters/BulkVoterSlipPrinter";
+import { ExportMenu } from "@/components/ui/export-menu";
+import {
+  exportGroupsListToPdf,
+  exportGroupsListToExcel,
+  exportGroupVotersToPdf,
+  exportGroupVotersToExcel,
+  fetchAllVoterGroups,
+  fetchGroupVoters,
+  type VoterGroupExportRow,
+} from "@/lib/voterGroupExport";
+import {
+  shufflePrefix,
+  generateRandomPrefix,
+  getDisplayUsername,
+  buildUsernamePreview,
+} from "@/lib/voterPrefix";
+import {
+  buildVoterGroupUrl,
+  buildVoterGroupsListUrl,
+  navigateVotersPage,
+  useVoterPageParams,
+} from "@/lib/voterGroupNav";
 
 interface VoterGroup {
   _id: string;
@@ -50,15 +82,29 @@ interface GroupVoter {
   plainPassword?: string;
   sequenceNumber?: number;
   electionAccess?: string[];
+  voterMetadata?: { prefix?: string; sequenceNumber?: number };
 }
 
-export default function VoterGroups({ embedded = false }: { embedded?: boolean; electionId?: string } = {}) {
+/** Icon-only action button for list cards */
+const cardIconBtn = "h-8 w-8 shrink-0 p-0";
+
+export default function VoterGroups({
+  embedded = false,
+  electionId,
+  suppressTitle = false,
+}: { embedded?: boolean; electionId?: string; suppressTitle?: boolean } = {}) {
+  const assignOnly = embedded && !!electionId;
   const { toast } = useToast();
+  const [, navigate] = useLocation();
+  const voterPageParams = useVoterPageParams();
+  const syncUrl = !assignOnly;
   const [isOpen, setIsOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
-  const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 10;
+  const [groupVotersPage, setGroupVotersPage] = useState(1);
+  const groupVotersPageSize = 10;
 
   // Selected group for management view
   const [selectedGroup, setSelectedGroup] = useState<VoterGroup | null>(null);
@@ -70,22 +116,29 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
   const [bulkStart, setBulkStart] = useState(1001);
   const [bulkCount, setBulkCount] = useState(10);
   const [singleVoterOpen, setSingleVoterOpen] = useState(false);
-  const [addVoterMode, setAddVoterMode] = useState<'choice' | 'existing' | 'new'>('choice');
-  const [addVoterSearch, setAddVoterSearch] = useState("");
-  const [addVoterSelectedIds, setAddVoterSelectedIds] = useState<string[]>([]);
   const [bulkVoterOpen, setBulkVoterOpen] = useState(false);
+  const [printSlipsOpen, setPrintSlipsOpen] = useState(false);
+  const [slipPrintVoters, setSlipPrintVoters] = useState<GroupVoter[]>([]);
+  const [isExportingList, setIsExportingList] = useState(false);
+  const [exportingGroupId, setExportingGroupId] = useState<string | null>(null);
 
   // Create dialog extended state
   const [groupDescription, setGroupDescription] = useState("");
-  const [groupPrefix, setGroupPrefix] = useState("");
-  const [createStep, setCreateStep] = useState<1 | 2>(1);
-  const [createdGroupId, setCreatedGroupId] = useState<string | null>(null);
-  const [existingVoterSearch, setExistingVoterSearch] = useState("");
-  const [selectedExistingIds, setSelectedExistingIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!embedded) document.title = "Voter Groups | Vote+";
   }, [embedded]);
+
+  useEffect(() => {
+    if (!bulkVoterOpen) return;
+    setBulkPrefix(generateRandomPrefix());
+  }, [bulkVoterOpen]);
+
+  useEffect(() => {
+    setGroupVotersPage(1);
+  }, [selectedGroup?._id]);
+
+  const bulkUsernamePreview = buildUsernamePreview(bulkPrefix, bulkStart, bulkCount);
 
   const userDataString = localStorage.getItem("user");
   const userData = userDataString ? JSON.parse(userDataString) : null;
@@ -107,45 +160,98 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
       const res = await apiRequest("GET", "/api/elections?limit=200");
       return res.json();
     },
-    enabled: !!selectedGroup,
   });
 
-  const { data: groupVotersData, isLoading: votersLoading, refetch: refetchVoters } = useQuery<{ data: GroupVoter[] }>({
-    queryKey: ["/api/voter-groups/voters", selectedGroup?._id],
+  const { data: groupVotersData, isLoading: votersLoading, refetch: refetchVoters } = useQuery<{
+    data: GroupVoter[];
+    pagination?: Pagination;
+  }>({
+    queryKey: ["/api/voter-groups/voters", selectedGroup?._id, groupVotersPage],
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/voter-groups/${selectedGroup!._id}/voters`);
+      const res = await apiRequest(
+        "GET",
+        `/api/voter-groups/${selectedGroup!._id}/voters?page=${groupVotersPage}&limit=${groupVotersPageSize}`
+      );
       return res.json();
     },
     enabled: !!selectedGroup,
   });
 
-  // Fetch existing voters for the "Add Existing Voters" step in create dialog
-  const { data: allVotersData } = useQuery<{ data: Array<{ _id: string; username: string; role?: string; isVoter?: boolean }> }>({
-    queryKey: ["/api/users/voters-for-picker"],
+  const { data: groupFromUrlData } = useQuery<{ data: VoterGroup }>({
+    queryKey: ["/api/voter-groups", voterPageParams.groupId, "from-url"],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/users");
+      const res = await apiRequest("GET", `/api/voter-groups/${voterPageParams.groupId}`);
       return res.json();
     },
-    enabled: (isOpen && createStep === 2) || (singleVoterOpen && addVoterMode === 'existing'),
+    enabled: syncUrl && !!voterPageParams.groupId,
   });
 
   const elections = electionsData?.data || [];
+  const assignableElections =
+    assignOnly && electionId
+      ? elections.filter((el) => String(el._id) === String(electionId))
+      : elections;
   const groupVoters = groupVotersData?.data || [];
+  const groupVotersPagination = groupVotersData?.pagination;
+  const groupVotersTotal = groupVotersPagination?.total ?? groupVoters.length;
   const groups = Array.isArray(data?.data) ? data!.data : [];
   const pagination = data?.pagination;
 
+  const applyGroupSelection = (g: VoterGroup | null, view?: "voters" | "elections") => {
+    if (g) {
+      setSelectedGroup(g);
+      setSelectedElectionIds((g.electionIds || []).map(String));
+      if (view) setGroupDetailTab(view);
+    } else {
+      setSelectedGroup(null);
+      setSelectedElectionIds([]);
+      setSingleVoterUsername("");
+      setGroupDetailTab("elections");
+    }
+  };
+
+  const [groupDetailTab, setGroupDetailTab] = useState<"elections" | "voters">("elections");
+
   // When entering a group, seed election selection from group data
-  const openGroup = (g: VoterGroup) => {
-    setSelectedGroup(g);
-    setSelectedElectionIds(g.electionIds || []);
-    setBulkPrefix(g.prefix || "VOTE");
+  const openGroup = (g: VoterGroup, view?: "voters" | "elections") => {
+    applyGroupSelection(g, view);
+    if (syncUrl) {
+      navigateVotersPage(buildVoterGroupUrl(g._id, view), navigate);
+    }
   };
 
   const closeGroup = () => {
-    setSelectedGroup(null);
-    setSelectedElectionIds([]);
-    setSingleVoterUsername("");
+    applyGroupSelection(null);
+    if (syncUrl) {
+      navigateVotersPage(buildVoterGroupsListUrl(), navigate);
+    }
   };
+
+  // Restore selected group from URL (?tab=groups&group=...)
+  useEffect(() => {
+    if (!syncUrl) return;
+    const { groupId, view } = voterPageParams;
+    if (!groupId) {
+      if (selectedGroup) applyGroupSelection(null);
+      return;
+    }
+    const match =
+      groups.find((g) => g._id === groupId) || groupFromUrlData?.data || null;
+    if (!match) return;
+    if (selectedGroup?._id !== groupId) {
+      applyGroupSelection(match, view || undefined);
+    } else if (view && groupDetailTab !== view) {
+      setGroupDetailTab(view);
+    }
+  }, [
+    syncUrl,
+    voterPageParams.groupId,
+    voterPageParams.view,
+    groups,
+    groupFromUrlData?.data,
+    selectedGroup?._id,
+    groupDetailTab,
+  ]);
 
   // --- Mutations ---
   const createMutation = useMutation({
@@ -153,21 +259,15 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
       const res = await apiRequest("POST", "/api/voter-groups", {
         name: groupName.trim(),
         description: groupDescription.trim() || undefined,
-        prefix: groupPrefix.trim() || undefined,
         franchiseId: franchiseId || undefined,
       });
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast({ title: "Voter group created", variant: "success" });
-      const newId = data.voterGroup?._id?.toString() || data.data?._id?.toString();
-      if (newId) {
-        setCreatedGroupId(newId);
-        setCreateStep(2);
-      } else {
-        setIsOpen(false);
-        setGroupName(""); setGroupDescription(""); setGroupPrefix("");
-      }
+      setIsOpen(false);
+      setGroupName("");
+      setGroupDescription("");
       queryClient.invalidateQueries({ queryKey: ["/api/voter-groups"] });
     },
     onError: (err: Error) => {
@@ -175,19 +275,132 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiRequest("DELETE", `/api/voter-groups/${id}`);
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Voter group deleted", variant: "success" });
-      setDeleteGroupId(null);
-      if (selectedGroup?._id === deleteGroupId) closeGroup();
+  const groupPageIds = groups.map((g) => g._id).filter(Boolean);
+  const selection = useBulkDeleteMode(groupPageIds);
+
+  const exportList = async (format: "pdf" | "excel") => {
+    setIsExportingList(true);
+    try {
+      const allGroups = await fetchAllVoterGroups();
+      if (allGroups.length === 0) {
+        toast({ title: "Nothing to export", description: "No voter groups found.", variant: "destructive" });
+        return;
+      }
+      if (format === "pdf") {
+        const result = await exportGroupsListToPdf(allGroups);
+        if (result.saved) {
+          toast({
+            title: "PDF exported",
+            description: `${allGroups.length} group(s) exported.`,
+            variant: "success",
+          });
+        }
+      } else {
+        const result = await exportGroupsListToExcel(allGroups);
+        if (result.saved) {
+          toast({
+            title: "Excel exported",
+            description: `${allGroups.length} group(s) exported.`,
+            variant: "success",
+          });
+        }
+      }
+    } catch (err) {
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExportingList(false);
+    }
+  };
+
+  const exportGroupVoters = async (
+    group: VoterGroupExportRow,
+    format: "pdf" | "excel"
+  ) => {
+    setExportingGroupId(group._id);
+    try {
+      const voters = await fetchGroupVoters(group._id);
+      if (voters.length === 0) {
+        toast({
+          title: "Nothing to export",
+          description: "This group has no voters yet.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const name = group.name || "Voter Group";
+      const result =
+        format === "pdf"
+          ? await exportGroupVotersToPdf(name, voters, elections)
+          : await exportGroupVotersToExcel(name, voters, elections);
+      if (result.saved) {
+        toast({
+          title: format === "pdf" ? "PDF exported" : "Excel exported",
+          description: `${voters.length} voter(s) from "${name}" exported.`,
+          variant: "success",
+        });
+      }
+    } catch (err) {
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingGroupId(null);
+    }
+  };
+
+  const openGroupPrintSlips = async (group: VoterGroupExportRow) => {
+    setExportingGroupId(group._id);
+    try {
+      const voters = await fetchGroupVoters(group._id);
+      if (voters.length === 0) {
+        toast({
+          title: "No voters to print",
+          description: "This group has no voters yet.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setSlipPrintVoters(voters);
+      setPrintSlipsOpen(true);
+    } catch (err) {
+      toast({
+        title: "Could not load voters",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingGroupId(null);
+    }
+  };
+
+  const deleteGroupsMutation = useMutation({
+    mutationFn: async (ids: string[]) => deleteByIds(ids, (id) => `/api/voter-groups/${id}`),
+    onSuccess: (result, ids) => {
+      setPendingDeleteIds(null);
+      selection.exitDeleteMode();
+      if (selectedGroup && ids.includes(selectedGroup._id)) closeGroup();
       queryClient.invalidateQueries({ queryKey: ["/api/voter-groups"] });
+
+      toast({
+        title: ids.length === 1 ? "Voter group deleted" : "Voter groups deleted",
+        description:
+          result.failed.length === 0
+            ? ids.length === 1
+              ? "The voter group has been deleted."
+              : `${result.deleted.length} group(s) deleted successfully.`
+            : `${result.deleted.length} deleted, ${result.failed.length} failed.`,
+        variant: result.failed.length ? "destructive" : "success",
+      });
     },
     onError: (err: Error) => {
-      toast({ title: "Could not delete group", description: err.message, variant: "destructive" });
+      toast({ title: "Could not delete group(s)", description: err.message, variant: "destructive" });
+      setPendingDeleteIds(null);
     },
   });
 
@@ -196,10 +409,11 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
       const res = await apiRequest("PUT", `/api/voter-groups/${selectedGroup!._id}/elections`, { electionIds });
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast({ title: "Elections saved", description: "Voter access updated for all group members.", variant: "success" });
       setSelectedGroup((g) => g ? { ...g, electionIds: selectedElectionIds } : g);
       queryClient.invalidateQueries({ queryKey: ["/api/voter-groups"] });
+      if (assignOnly) closeGroup();
     },
     onError: (err: Error) => {
       toast({ title: "Could not save elections", description: err.message, variant: "destructive" });
@@ -216,12 +430,11 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
     onSuccess: (data) => {
       toast({
         title: "Voter created",
-        description: `${data.data.username} — password: ${data.data.plainPassword}`,
+        description: `${data.data.username} ? password: ${data.data.plainPassword}`,
         variant: "success",
       });
       setSingleVoterUsername("");
       setSingleVoterOpen(false);
-      setAddVoterMode('choice');
       refetchVoters();
       queryClient.invalidateQueries({ queryKey: ["/api/voter-groups"] });
     },
@@ -233,7 +446,8 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
   const bulkGenerateMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/voter-groups/${selectedGroup!._id}/generate`, {
-        prefix: bulkPrefix.trim() || undefined,
+        prefix: bulkPrefix.trim(),
+        shuffledPrefix: bulkPrefix.trim(),
         startingNumber: bulkStart,
         count: bulkCount,
         franchiseId: franchiseId || undefined,
@@ -251,228 +465,200 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
     },
   });
 
-  const addExistingUsersMutation = useMutation({
-    mutationFn: async ({ groupId, userIds }: { groupId: string; userIds: string[] }) => {
-      const res = await apiRequest("POST", `/api/voter-groups/${groupId}/add-users`, { userIds });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      toast({ title: `${data.data?.added || 0} voter(s) added to group`, variant: "success" });
-      const closeCreate = () => {
-        setIsOpen(false);
-        setGroupName(""); setGroupDescription(""); setGroupPrefix("");
-        setCreateStep(1); setCreatedGroupId(null); setSelectedExistingIds([]);
-      };
-      closeCreate();
-    },
-    onError: (err: Error) => {
-      toast({ title: "Could not add voters", description: err.message, variant: "destructive" });
-    },
-  });
-
   const toggleElection = (id: string) => {
+    const idStr = String(id);
     setSelectedElectionIds((prev) =>
-      prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]
+      prev.map(String).includes(idStr)
+        ? prev.filter((e) => String(e) !== idStr)
+        : [...prev, idStr]
     );
   };
 
   const Wrapper = embedded ? Fragment : MainLayout;
 
-  // â”€â”€ Group detail view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Group detail / assign view
   if (selectedGroup) {
+    const electionAssignCard = (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            {assignOnly ? "Assign Election to Group" : "Assign Elections to this Group"}
+          </CardTitle>
+          <p className="text-sm text-gray-500">
+            {assignOnly
+              ? "Voters in this group will get access to this election when assigned."
+              : "Voters in this group will have access to the selected elections."}
+          </p>
+        </CardHeader>
+        <CardContent>
+          {assignableElections.length === 0 ? (
+            <p className="text-sm text-gray-500">No elections available.</p>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {assignableElections.map((el) => {
+                const subtitle = getElectionSubtitle(el);
+                return (
+                  <div
+                    key={el._id}
+                    className="flex items-center gap-2 rounded-md p-2 hover:bg-primary/5"
+                  >
+                    <SelectCheckbox
+                      checked={selectedElectionIds.map(String).includes(String(el._id))}
+                      onCheckedChange={() => toggleElection(el._id)}
+                      aria-label={`Assign ${getElectionLabel(el)}`}
+                    />
+                    <div className="min-w-0 text-sm">
+                      <span className="font-medium text-gray-900">{getElectionLabel(el)}</span>
+                      {subtitle ? (
+                        <span className="ml-1 text-xs text-gray-500">({subtitle})</span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <Button
+            className="mt-4"
+            onClick={() => assignElectionsMutation.mutate(selectedElectionIds)}
+            disabled={assignElectionsMutation.isPending}
+          >
+            {assignElectionsMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Saving?
+              </>
+            ) : assignOnly ? (
+              "Assign Election"
+            ) : (
+              "Save Elections"
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+
+    if (assignOnly) {
+      return (
+        <Wrapper>
+          <div className="mb-4 flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={closeGroup} className="gap-1">
+              <ArrowLeft className="h-4 w-4" /> All Groups
+            </Button>
+            <h2 className="text-lg font-semibold text-gray-900 truncate">
+              {selectedGroup.name || "Voter Group"}
+            </h2>
+          </div>
+          {electionAssignCard}
+        </Wrapper>
+      );
+    }
+
     return (
       <Wrapper>
-        <div className="mb-4 flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={closeGroup} className="gap-1">
+        <div className="mb-4 space-y-3">
+          <Button variant="ghost" size="sm" onClick={closeGroup} className="gap-1 -ml-2 w-fit">
             <ArrowLeft className="h-4 w-4" /> All Groups
           </Button>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            {selectedGroup.name || "Voter Group"}
-          </h1>
-          <Badge variant="outline">{groupVoters.length} voters</Badge>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h1 className="text-lg font-bold leading-tight text-gray-900 sm:text-xl">
+                {selectedGroup.name || "Voter Group"}
+              </h1>
+              <Badge variant="outline" className="h-6 text-xs font-medium">
+                {groupVotersTotal} voter{groupVotersTotal === 1 ? "" : "s"}
+              </Badge>
+            </div>
+            <ExportMenu
+              iconOnly
+              onExportPdf={() => exportGroupVoters(selectedGroup, "pdf")}
+              onExportExcel={() => exportGroupVoters(selectedGroup, "excel")}
+              onPrintSlips={async () => {
+                const voters = await fetchGroupVoters(selectedGroup._id);
+                if (voters.length === 0) {
+                  toast({
+                    title: "No voters to print",
+                    description: "Add voters to this group first.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                setSlipPrintVoters(voters);
+                setPrintSlipsOpen(true);
+              }}
+              disabled={
+                exportingGroupId === selectedGroup._id ||
+                (groupVotersTotal === 0 && !votersLoading)
+              }
+            />
+          </div>
         </div>
 
-        <Tabs defaultValue="elections">
+        <Tabs
+          value={groupDetailTab}
+          onValueChange={(v) => {
+            const tab = v as "elections" | "voters";
+            setGroupDetailTab(tab);
+            if (syncUrl && selectedGroup) {
+              navigateVotersPage(buildVoterGroupUrl(selectedGroup._id, tab), navigate);
+            }
+          }}
+        >
           <TabsList>
             <TabsTrigger value="elections">Elections</TabsTrigger>
             <TabsTrigger value="voters">Voters</TabsTrigger>
           </TabsList>
 
-          {/* â”€â”€ Elections tab â”€â”€ */}
           <TabsContent value="elections" className="mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Assign Elections to this Group</CardTitle>
-                <p className="text-sm text-gray-500">Voters in this group will have access to the selected elections.</p>
-              </CardHeader>
-              <CardContent>
-                {elections.length === 0 ? (
-                  <p className="text-sm text-gray-500">No elections available.</p>
-                ) : (
-                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                    {elections.map((el) => (
-                      <label key={el._id} className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 cursor-pointer">
-                        <Checkbox
-                          checked={selectedElectionIds.includes(el._id)}
-                          onCheckedChange={() => toggleElection(el._id)}
-                        />
-                        <span className="text-sm font-medium">{el.title}</span>
-                        <span className="text-xs text-gray-400 ml-1">â€” {el.organization}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-                <Button
-                  className="mt-4"
-                  onClick={() => assignElectionsMutation.mutate(selectedElectionIds)}
-                  disabled={assignElectionsMutation.isPending}
-                >
-                  {assignElectionsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Savingâ€¦</> : "Save Elections"}
-                </Button>
-              </CardContent>
-            </Card>
+            {electionAssignCard}
           </TabsContent>
-
-          {/* â”€â”€ Voters tab â”€â”€ */}
           <TabsContent value="voters" className="mt-4">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-semibold text-gray-800">Group Voters</h2>
-              <div className="flex gap-2">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-gray-800">Group Voters</h2>
+              <div className="flex items-center gap-2">
                 {/* Single voter */}
                 <Dialog open={singleVoterOpen} onOpenChange={(open) => {
                     setSingleVoterOpen(open);
-                    if (!open) { setAddVoterMode('choice'); setAddVoterSearch(""); setAddVoterSelectedIds([]); setSingleVoterUsername(""); }
+                    if (!open) setSingleVoterUsername("");
                   }}>
                   <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1">
-                      <PlusCircle className="h-4 w-4" /> Add Voter
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 justify-center gap-1.5 px-3 text-xs font-medium"
+                    >
+                      <PlusCircle className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Add Voter</span>
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="max-w-md">
                     <DialogHeader>
                       <DialogTitle>Add Voter</DialogTitle>
                       <DialogDescription>
-                        {addVoterMode === 'choice' && 'Choose how to add a voter to this group.'}
-                        {addVoterMode === 'existing' && 'Search and select existing voters to add.'}
-                        {addVoterMode === 'new' && 'Create a new voter account and add them to this group.'}
+                        Create a new voter account and add them to this group.
                       </DialogDescription>
                     </DialogHeader>
 
-                    {/* Mode: choice */}
-                    {addVoterMode === 'choice' && (
-                      <div className="grid grid-cols-2 gap-3 py-2">
-                        <button
-                          onClick={() => setAddVoterMode('existing')}
-                          className="flex flex-col items-center justify-center gap-2 p-5 rounded-lg border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
-                        >
-                          <Search className="h-7 w-7 text-primary" />
-                          <span className="text-sm font-medium text-gray-800">Existing Voter</span>
-                          <span className="text-xs text-gray-400 text-center">Pick from your voter list</span>
-                        </button>
-                        <button
-                          onClick={() => setAddVoterMode('new')}
-                          className="flex flex-col items-center justify-center gap-2 p-5 rounded-lg border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
-                        >
-                          <UserPlus className="h-7 w-7 text-primary" />
-                          <span className="text-sm font-medium text-gray-800">New Voter</span>
-                          <span className="text-xs text-gray-400 text-center">Create a new account</span>
-                        </button>
+                    <div className="space-y-3 py-1">
+                      <div className="space-y-1">
+                        <Label>Username *</Label>
+                        <Input
+                          value={singleVoterUsername}
+                          onChange={(e) => setSingleVoterUsername(e.target.value)}
+                          placeholder="e.g. VOTE1001"
+                          autoFocus
+                        />
                       </div>
-                    )}
+                      <p className="text-xs text-gray-500">A unique random password will be generated automatically.</p>
+                    </div>
 
-                    {/* Mode: existing */}
-                    {addVoterMode === 'existing' && (
-                      <div className="space-y-3 py-1">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                          <Input
-                            className="pl-9"
-                            placeholder="Search voters by username…"
-                            value={addVoterSearch}
-                            onChange={(e) => setAddVoterSearch(e.target.value)}
-                            autoFocus
-                          />
-                        </div>
-                        <div className="max-h-60 overflow-y-auto border rounded-md divide-y bg-white">
-                          {(() => {
-                            const alreadyInGroup = new Set(groupVoters.map(v => v._id));
-                            const filtered = (allVotersData?.data || [])
-                              .filter(u => (u.role === 'voter' || u.isVoter === true) && !alreadyInGroup.has(u._id) && (!addVoterSearch || u.username.toLowerCase().includes(addVoterSearch.toLowerCase())))
-                              .slice(0, 80);
-                            if (filtered.length === 0) return (
-                              <p className="text-sm text-gray-400 px-3 py-4 text-center">
-                                {allVotersData ? 'No voters found.' : 'Loading…'}
-                              </p>
-                            );
-                            return filtered.map(u => (
-                              <label key={u._id} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
-                                <Checkbox
-                                  checked={addVoterSelectedIds.includes(u._id)}
-                                  onCheckedChange={(checked) =>
-                                    setAddVoterSelectedIds(prev => checked ? [...prev, u._id] : prev.filter(id => id !== u._id))
-                                  }
-                                />
-                                <span className="text-sm font-mono">{u.username}</span>
-                              </label>
-                            ));
-                          })()}
-                        </div>
-                        {addVoterSelectedIds.length > 0 && (
-                          <p className="text-xs text-primary font-medium">{addVoterSelectedIds.length} selected</p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Mode: new */}
-                    {addVoterMode === 'new' && (
-                      <div className="space-y-3 py-1">
-                        <div className="space-y-1">
-                          <Label>Username *</Label>
-                          <Input
-                            value={singleVoterUsername}
-                            onChange={(e) => setSingleVoterUsername(e.target.value)}
-                            placeholder="e.g. VOTE1001"
-                            autoFocus
-                          />
-                        </div>
-                        <p className="text-xs text-gray-500">A unique random password will be generated automatically.</p>
-                      </div>
-                    )}
-
-                    <DialogFooter className="gap-2">
-                      {addVoterMode !== 'choice' && (
-                        <Button variant="ghost" size="sm" onClick={() => { setAddVoterMode('choice'); setAddVoterSearch(""); setAddVoterSelectedIds([]); setSingleVoterUsername(""); }}>
-                          ← Back
-                        </Button>
-                      )}
-                      {addVoterMode === 'existing' && (
-                        <Button
-                          disabled={addVoterSelectedIds.length === 0 || addExistingUsersMutation.isPending}
-                          onClick={() => selectedGroup && addExistingUsersMutation.mutate(
-                            { groupId: selectedGroup._id, userIds: addVoterSelectedIds },
-                            {
-                              onSuccess: () => {
-                                setSingleVoterOpen(false);
-                                setAddVoterMode('choice');
-                                setAddVoterSearch("");
-                                setAddVoterSelectedIds([]);
-                                refetchVoters();
-                              }
-                            }
-                          )}
-                        >
-                          {addExistingUsersMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Adding…</> : `Add ${addVoterSelectedIds.length} Voter(s)`}
-                        </Button>
-                      )}
-                      {addVoterMode === 'new' && (
-                        <Button
-                          onClick={() => addSingleVoterMutation.mutate()}
-                          disabled={!singleVoterUsername.trim() || addSingleVoterMutation.isPending}
-                        >
-                          {addSingleVoterMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : 'Create Voter'}
-                        </Button>
-                      )}
+                    <DialogFooter>
+                      <Button
+                        onClick={() => addSingleVoterMutation.mutate()}
+                        disabled={!singleVoterUsername.trim() || addSingleVoterMutation.isPending}
+                      >
+                        {addSingleVoterMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating?</> : 'Create Voter'}
+                      </Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -480,8 +666,12 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
                 {/* Bulk voters */}
                 <Dialog open={bulkVoterOpen} onOpenChange={setBulkVoterOpen}>
                   <DialogTrigger asChild>
-                    <Button size="sm" className="gap-1">
-                      <Users className="h-4 w-4" /> Bulk Create
+                    <Button
+                      size="sm"
+                      className="h-9 justify-center gap-1.5 px-3 text-xs font-medium"
+                    >
+                      <Users className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Bulk Create</span>
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
@@ -494,8 +684,27 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
                     </DialogHeader>
                     <div className="space-y-3 py-2">
                       <div className="space-y-1">
-                        <Label>Prefix <span className="text-gray-400 text-xs font-normal">(optional)</span></Label>
-                        <Input value={bulkPrefix} onChange={(e) => setBulkPrefix(e.target.value)} placeholder="e.g. VOTE (leave blank for numbers only)" />
+                        <Label>Prefix</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            value={bulkPrefix}
+                            onChange={(e) => setBulkPrefix(e.target.value.toUpperCase())}
+                            placeholder="e.g. KXRM"
+                            className="font-mono"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="shrink-0"
+                            title="Generate new random prefix"
+                            onClick={() =>
+                              setBulkPrefix((current) => shufflePrefix(current))
+                            }
+                          >
+                            <Shuffle className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
@@ -508,7 +717,8 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
                         </div>
                       </div>
                       <p className="text-xs text-blue-600 bg-blue-50 rounded p-2">
-                        Usernames: <strong>{bulkPrefix}{bulkStart}</strong> → <strong>{bulkPrefix}{bulkStart + bulkCount - 1}</strong> · Unique random passwords.
+                        Usernames: <strong>{bulkUsernamePreview.from}</strong> to{" "}
+                        <strong>{bulkUsernamePreview.to}</strong> ? unique random passwords.
                       </p>
                     </div>
                     <DialogFooter>
@@ -516,7 +726,7 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
                         onClick={() => bulkGenerateMutation.mutate()}
                         disabled={bulkGenerateMutation.isPending}
                       >
-                        {bulkGenerateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generating…</> : `Generate ${bulkCount} Voters`}
+                        {bulkGenerateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generating?</> : `Generate ${bulkCount} Voters`}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -526,12 +736,13 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
 
             {votersLoading ? (
               <div className="space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-            ) : groupVoters.length === 0 ? (
+            ) : groupVotersTotal === 0 ? (
               <Card><CardContent className="py-10 text-center text-gray-500">No voters in this group yet. Add voters above.</CardContent></Card>
             ) : (
+              <div className="space-y-3">
               <div className="border rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b">
+                  <thead className="bg-white border-b">
                     <tr>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Username</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Password</th>
@@ -541,31 +752,51 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
                   </thead>
                   <tbody className="divide-y">
                     {groupVoters.map((v) => (
-                      <tr key={v._id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 font-mono">{v.username}</td>
+                      <tr key={v._id} className="hover:bg-primary/5">
+                        <td className="px-4 py-2 font-mono">{getDisplayUsername(v)}</td>
                         <td className="px-4 py-2 font-mono text-gray-600">{(v as any).plainPassword || <span className="text-gray-400 italic">hidden</span>}</td>
                         <td className="px-4 py-2">
                           <Badge variant={v.status === "active" ? "default" : "secondary"}>{v.status || "active"}</Badge>
                         </td>
                         <td className="px-4 py-2">
-                          <VoterSlipPrinter voter={v as any} electionNames={elections.filter(e => (v.electionAccess || []).includes(e._id)).map(e => `${e.title} â€” ${e.organization}`)} />
+                          <VoterSlipPrinter voter={v as any} electionNames={elections.filter(e => (v.electionAccess || []).includes(e._id)).map(e => getElectionLabel(e))} />
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              {groupVotersPagination && groupVotersPagination.total > 0 && (
+                <PaginationControls
+                  page={groupVotersPagination.page}
+                  totalPages={groupVotersPagination.totalPages ?? 1}
+                  total={groupVotersPagination.total}
+                  pageSize={groupVotersPagination.pageSize}
+                  onPageChange={setGroupVotersPage}
+                />
+              )}
+              </div>
             )}
           </TabsContent>
         </Tabs>
+        <BulkVoterSlipPrinter
+          voters={slipPrintVoters}
+          elections={elections}
+          open={printSlipsOpen}
+          onOpenChange={setPrintSlipsOpen}
+          hideTrigger
+          title={selectedGroup ? `${selectedGroup.name} ? Print Slips` : undefined}
+        />
       </Wrapper>
     );
   }
 
-  // â”€â”€ Group list view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ?? Group list view ????????????????????????????????????????????????????????
   return (
     <Wrapper>
-      <div className="mb-6 flex items-center justify-between gap-3">
+      <PageContent>
+      <div className={cn("mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between", suppressTitle && "sm:justify-end")}>
+        {!suppressTitle && (
         <div>
           <h1 className={embedded ? "text-lg font-semibold text-gray-900 flex items-center gap-2" : "text-2xl font-bold text-gray-900 flex items-center gap-2"}>
             <Users className={embedded ? "h-5 w-5 text-primary" : "h-6 w-6 text-primary"} />
@@ -573,101 +804,65 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
           </h1>
           <p className="text-sm text-gray-500 mt-1">Create groups, assign elections, and manage voters inside each group.</p>
         </div>
+        )}
+        <div className={cn(
+          "grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-2",
+          suppressTitle && "w-full"
+        )}>
+          {!selection.deleteMode && !assignOnly && (
+            <ExportMenu
+              onExportPdf={() => exportList("pdf")}
+              onExportExcel={() => exportList("excel")}
+              disabled={isExportingList || groups.length === 0}
+            />
+          )}
+          <DeleteModeButton
+            active={selection.deleteMode}
+            onClick={() =>
+              selection.deleteMode ? selection.exitDeleteMode() : selection.enterDeleteMode()
+            }
+          />
         <Dialog open={isOpen} onOpenChange={(open) => {
             if (!open) {
               setIsOpen(false);
-              setGroupName(""); setGroupDescription(""); setGroupPrefix("");
-              setCreateStep(1); setCreatedGroupId(null); setSelectedExistingIds([]);
-              setExistingVoterSearch("");
-            } else { setIsOpen(true); }
+              setGroupName("");
+              setGroupDescription("");
+            } else {
+              setIsOpen(true);
+            }
           }}>
           <DialogTrigger asChild>
-            <Button className="gap-1 shrink-0">
-              <PlusCircle className="h-4 w-4" />
-              <span className="hidden sm:inline">New Group</span>
+            <Button size="sm" className="h-10 w-full justify-center gap-1.5 px-2 sm:w-auto sm:px-3">
+              <PlusCircle className="h-4 w-4 shrink-0" />
+              <span className="truncate">
+                <span className="sm:hidden">Add</span>
+                <span className="hidden sm:inline">New Group</span>
+              </span>
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg">
-            {createStep === 1 ? (
-              <>
-                <DialogHeader>
-                  <DialogTitle>Create Voter Group</DialogTitle>
-                  <DialogDescription>Set up the group details. You can add voters after creation.</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={(e) => { e.preventDefault(); if (groupName.trim()) createMutation.mutate(); }} className="space-y-3 pt-1">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="gname">Group Name *</Label>
-                    <Input id="gname" value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. Block A Voters" autoFocus />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="gdesc">Description <span className="text-gray-400 text-xs font-normal">(optional)</span></Label>
-                    <Input id="gdesc" value={groupDescription} onChange={(e) => setGroupDescription(e.target.value)} placeholder="e.g. Voters from Ward 3" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="gpfx">Default Prefix <span className="text-gray-400 text-xs font-normal">(optional)</span></Label>
-                    <Input id="gpfx" value={groupPrefix} onChange={(e) => setGroupPrefix(e.target.value.toUpperCase())} placeholder="e.g. WARD3" />
-                    <p className="text-xs text-gray-400">Used as default when bulk generating voters in this group.</p>
-                  </div>
-                  <DialogFooter className="pt-2">
-                    <Button type="submit" disabled={!groupName.trim() || createMutation.isPending}>
-                      {createMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : "Create & Continue →"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </>
-            ) : (
-              <>
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2"><UserPlus className="h-5 w-5 text-primary" /> Add Existing Voters</DialogTitle>
-                  <DialogDescription>Optionally add existing voter accounts to <strong>"{groupName}"</strong>.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-3 pt-1">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                    <Input
-                      className="pl-9"
-                      placeholder="Search voters by username…"
-                      value={existingVoterSearch}
-                      onChange={(e) => setExistingVoterSearch(e.target.value)}
-                    />
-                  </div>
-                  <div className="max-h-56 overflow-y-auto border rounded-md divide-y bg-white">
-                    {(allVotersData?.data || [])
-                      .filter(u => (u.role === 'voter' || u.isVoter === true) && (!existingVoterSearch || u.username.toLowerCase().includes(existingVoterSearch.toLowerCase())))
-                      .slice(0, 60)
-                      .map(u => (
-                        <label key={u._id} className="flex items-center gap-3 px-3 py-1.5 hover:bg-gray-50 cursor-pointer">
-                          <Checkbox
-                            checked={selectedExistingIds.includes(u._id)}
-                            onCheckedChange={(checked) => setSelectedExistingIds(prev => checked ? [...prev, u._id] : prev.filter(id => id !== u._id))}
-                          />
-                          <span className="text-sm font-mono">{u.username}</span>
-                        </label>
-                      ))
-                    }
-                    {(allVotersData?.data || []).filter(u => u.role === 'voter' || u.isVoter === true).length === 0 && (
-                      <p className="text-sm text-gray-400 px-3 py-4 text-center">No existing voters found.</p>
-                    )}
-                  </div>
-                  {selectedExistingIds.length > 0 && (
-                    <p className="text-xs text-primary font-medium">{selectedExistingIds.length} voter(s) selected</p>
-                  )}
-                </div>
-                <DialogFooter className="gap-2 pt-2">
-                  <Button variant="outline" onClick={() => { setIsOpen(false); setGroupName(""); setGroupDescription(""); setGroupPrefix(""); setCreateStep(1); setCreatedGroupId(null); setSelectedExistingIds([]); setExistingVoterSearch(""); }}>
-                    Skip & Close
-                  </Button>
-                  <Button
-                    disabled={selectedExistingIds.length === 0 || addExistingUsersMutation.isPending}
-                    onClick={() => createdGroupId && addExistingUsersMutation.mutate({ groupId: createdGroupId, userIds: selectedExistingIds })}
-                  >
-                    {addExistingUsersMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Adding…</> : `Add ${selectedExistingIds.length} Voter(s) →`}
-                  </Button>
-                </DialogFooter>
-              </>
-            )}
+            <DialogHeader>
+              <DialogTitle>Create Voter Group</DialogTitle>
+              <DialogDescription>Set up the group details. You can add voters after creation.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={(e) => { e.preventDefault(); if (groupName.trim()) createMutation.mutate(); }} className="space-y-3 pt-1">
+              <div className="space-y-1.5">
+                <Label htmlFor="gname">Group Name *</Label>
+                <Input id="gname" value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. Block A Voters" autoFocus />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="gdesc">Description <span className="text-gray-400 text-xs font-normal">(optional)</span></Label>
+                <Input id="gdesc" value={groupDescription} onChange={(e) => setGroupDescription(e.target.value)} placeholder="e.g. Voters from Ward 3" />
+              </div>
+              <DialogFooter className="pt-2">
+                <Button type="submit" disabled={!groupName.trim() || createMutation.isPending}>
+                  {createMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating?</> : "Create Group"}
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {error && (
@@ -683,63 +878,150 @@ export default function VoterGroups({ embedded = false }: { embedded?: boolean; 
       ) : groups.length === 0 ? (
         <Card><CardContent className="py-12 text-center text-gray-500">No voter groups yet. Create one to get started.</CardContent></Card>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {groups.map((g) => (
-            <Card key={g._id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4 flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-gray-900 truncate">{g.name || "Untitled"}</p>
-                  {g.description && <p className="text-xs text-gray-400 truncate mt-0.5">{g.description}</p>}
-                  <div className="flex gap-3 mt-1 text-xs text-gray-500">
-                    <span>{g.voters?.length || 0} voters</span>
-                    <span>{g.electionIds?.length || 0} elections</span>
-                    {g.prefix && <span className="font-mono text-gray-400">prefix: {g.prefix}</span>}
+        <>
+          <DeleteModeBar
+            active={selection.deleteMode}
+            count={selection.selectedCount}
+            entityLabel="group"
+            onCancel={selection.exitDeleteMode}
+            onConfirmDelete={() => selection.selectedCount > 0 && setPendingDeleteIds([...selection.selectedIds])}
+            deleting={deleteGroupsMutation.isPending}
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+          {groups.map((g) => {
+            const voterCount = g.voters?.length ?? 0;
+            const canExport = !selection.deleteMode && !assignOnly && voterCount > 0;
+
+            return (
+            <Card key={g._id} className="overflow-hidden hover:shadow-md transition-shadow">
+              <CardContent className="p-0">
+                <div className="flex items-start justify-between gap-2 p-3.5">
+                  <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                    {selection.showSelectors && (
+                      <RowSelectCheckbox
+                        checked={selection.isSelected(g._id)}
+                        onCheckedChange={() => selection.toggle(g._id)}
+                        aria-label={`Select ${g.name || "group"}`}
+                        className="mt-0.5"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold leading-snug text-gray-900 truncate">
+                        {g.name || "Untitled"}
+                      </p>
+                      {g.description && (
+                        <p className="text-xs leading-relaxed text-gray-500 truncate mt-0.5">
+                          {g.description}
+                        </p>
+                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <Badge variant="secondary" className="h-5 px-1.5 text-[11px] font-medium">
+                          {voterCount} voter{voterCount === 1 ? "" : "s"}
+                        </Badge>
+                        <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-medium">
+                          {g.electionIds?.length || 0} election{(g.electionIds?.length || 0) === 1 ? "" : "s"}
+                        </Badge>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="flex gap-1 shrink-0">
-                  <Button variant="outline" size="sm" className="gap-1" onClick={() => openGroup(g)}>
-                    <Settings2 className="h-3.5 w-3.5" /> Manage
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-600 hover:text-red-900 hover:bg-red-50"
-                    onClick={() => setDeleteGroupId(g._id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+
+                  {!selection.deleteMode && (
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      {canExport && (
+                        <ExportMenu
+                          iconOnly
+                          onExportPdf={() => exportGroupVoters(g, "pdf")}
+                          onExportExcel={() => exportGroupVoters(g, "excel")}
+                          onPrintSlips={() => openGroupPrintSlips(g)}
+                          disabled={exportingGroupId === g._id}
+                        />
+                      )}
+                      {assignOnly ? (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className={cardIconBtn}
+                          onClick={() => openGroup(g)}
+                          aria-label={`Assign ${g.name || "group"}`}
+                        >
+                          <Link2 className="h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className={cardIconBtn}
+                          onClick={() => openGroup(g)}
+                          aria-label={`Manage ${g.name || "group"}`}
+                        >
+                          <Settings2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(cardIconBtn, "text-red-600 hover:bg-red-50 hover:text-red-700")}
+                        onClick={() => setPendingDeleteIds([g._id])}
+                        aria-label={`Delete ${g.name || "group"}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
+        </>
       )}
 
       {pagination && pagination.total > 0 && (
-        <PaginationControls
-          page={pagination.page}
-          totalPages={pagination.totalPages ?? 1}
-          total={pagination.total}
-          pageSize={pagination.pageSize}
-          onPageChange={setPage}
-        />
+        <PageBottom>
+          <PaginationControls
+            page={pagination.page}
+            totalPages={pagination.totalPages ?? 1}
+            total={pagination.total}
+            pageSize={pagination.pageSize}
+            onPageChange={setPage}
+          />
+        </PageBottom>
       )}
 
       <ConfirmDialog
-        open={!!deleteGroupId}
-        onOpenChange={(open) => !open && setDeleteGroupId(null)}
-        onConfirm={() => deleteGroupId && deleteMutation.mutate(deleteGroupId)}
-        loading={deleteMutation.isPending}
-        title="Delete voter group?"
+        open={!!pendingDeleteIds?.length}
+        onOpenChange={(open) => !open && setPendingDeleteIds(null)}
+        onConfirm={() => pendingDeleteIds?.length && deleteGroupsMutation.mutate(pendingDeleteIds)}
+        loading={deleteGroupsMutation.isPending}
+        title="Are you sure?"
         description={
-          <>
-            This will permanently delete{" "}
-            <span className="font-semibold">{groups.find((g) => g._id === deleteGroupId)?.name || "this group"}</span>.
-            Voters inside will not be deleted.
-          </>
+          pendingDeleteIds && pendingDeleteIds.length > 1 ? (
+            <>This will permanently delete {pendingDeleteIds.length} voter groups. Voters inside will not be deleted.</>
+          ) : (
+            <>
+              This will permanently delete{" "}
+              <span className="font-semibold">
+                {groups.find((g) => g._id === pendingDeleteIds?.[0])?.name || "this group"}
+              </span>
+              . Voters inside will not be deleted.
+            </>
+          )
         }
-        confirmText="Delete group"
+        confirmText={
+          pendingDeleteIds && pendingDeleteIds.length > 1
+            ? `Delete ${pendingDeleteIds.length} groups`
+            : "Delete group"
+        }
       />
+      <BulkVoterSlipPrinter
+        voters={slipPrintVoters}
+        elections={elections}
+        open={printSlipsOpen}
+        onOpenChange={setPrintSlipsOpen}
+        hideTrigger
+      />
+      </PageContent>
     </Wrapper>
   );
 }

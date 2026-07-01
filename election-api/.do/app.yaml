@@ -41,3 +41,21 @@ services:
       - key: FRONTEND_URLS
         value: https://election-portal-web.netlify.app
         scope: RUN_TIME
+      - key: DO_SPACES_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: DO_SPACES_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: DO_SPACES_BUCKET
+        scope: RUN_TIME
+        type: SECRET
+      - key: DO_SPACES_REGION
+        value: nyc3
+        scope: RUN_TIME
+      - key: DO_SPACES_ENDPOINT
+        value: https://nyc3.digitaloceanspaces.com
+        scope: RUN_TIME
+      - key: DO_SPACES_CDN_URL
+        scope: RUN_TIME
+        type: SECRET

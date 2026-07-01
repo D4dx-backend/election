@@ -17,15 +17,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // No body parsers: this is a streaming reverse proxy. Parsing bodies here
   // (especially multipart/form-data) breaks file uploads forwarded to the backend.
   app.use(cookieParser());
+  console.log(`[portal] Proxying /api/* → ${API_URL}`);
 
   const makeProxy = (backendBasePath: string) =>
     createProxyMiddleware({
       target: API_URL,
       changeOrigin: true,
+      timeout: 120_000,
+      proxyTimeout: 120_000,
       // Express strips the mount prefix, so remaining path starts with "/"
       // e.g. mounted at /api/auth → proxy sees /login → rewrite to /api/v1/auth/login
       pathRewrite: (path) => `${backendBasePath}${path}`,
       on: {
+        proxyRes: (proxyRes) => {
+          // Prevent browser/proxy 304 responses that leave stale empty lists after mutations.
+          delete proxyRes.headers["etag"];
+          delete proxyRes.headers["last-modified"];
+          proxyRes.headers["cache-control"] = "no-store, no-cache, must-revalidate";
+          proxyRes.headers["pragma"] = "no-cache";
+          proxyRes.headers["expires"] = "0";
+        },
         error: (err: Error, _req: any, res: any) => {
           console.error("Proxy error:", err.message);
           res.status(502).json({ success: false, message: "Backend service unavailable" });

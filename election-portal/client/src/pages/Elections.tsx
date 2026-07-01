@@ -10,17 +10,14 @@ import { ElectionFilter, ElectionWithDetails, Franchise, Pagination } from "@/li
 import { useCallback } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PaginationControls } from "@/components/ui/pagination-controls";
-import { 
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { PageContent, PageBottom } from "@/components/layout/PageContent";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DeleteModeBar } from "@/components/ui/delete-mode-bar";
+import { DeleteModeButton } from "@/components/ui/delete-mode-button";
+import { useBulkDeleteMode } from "@/hooks/useBulkDeleteMode";
+import { deleteByIds } from "@/lib/bulkDelete";
 import { useToast } from "@/hooks/use-toast";
+import { isElectionEditable } from "@/lib/electionHelpers";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -28,7 +25,7 @@ export default function Elections() {
   const [filters, setFilters] = useState<ElectionFilter>({});
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  const [deleteElectionId, setDeleteElectionId] = useState<string | null>(null);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(null);
   const { toast } = useToast();
 
   // Get user data from localStorage for role-based filtering
@@ -131,31 +128,32 @@ export default function Elections() {
     }
   };
 
-  // Delete election mutation
-  const deleteMutation = useMutation({
-    mutationFn: async (electionId: string) => {
-      await apiRequest('DELETE', `/api/elections/${electionId}`);
-    },
-    onSuccess: () => {
+  const deleteElectionsMutation = useMutation({
+    mutationFn: async (ids: string[]) => deleteByIds(ids, (id) => `/api/elections/${id}`),
+    onSuccess: (result, ids) => {
       toast({
-        title: "Election deleted",
-        description: "The election has been successfully deleted",
-        variant: "success"
+        title: ids.length === 1 ? "Election deleted" : "Elections deleted",
+        description:
+          result.failed.length === 0
+            ? ids.length === 1
+              ? "The election has been successfully deleted."
+              : `${result.deleted.length} election(s) deleted successfully.`
+            : `${result.deleted.length} deleted, ${result.failed.length} failed.`,
+        variant: result.failed.length ? "destructive" : "success",
       });
 
-      // Invalidate and refetch elections
-      queryClient.invalidateQueries({ queryKey: ['/api/elections'] });
-
-      setDeleteElectionId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/elections"] });
+      setPendingDeleteIds(null);
+      selection.exitDeleteMode();
     },
     onError: (error) => {
       toast({
         title: "Delete failed",
-        description: `Failed to delete election: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        variant: "destructive"
+        description: `Failed to delete election: ${error instanceof Error ? error.message : "Unknown error"}`,
+        variant: "destructive",
       });
-      setDeleteElectionId(null);
-    }
+      setPendingDeleteIds(null);
+    },
   });
 
   const handleApplyFilters = (newFilters: ElectionFilter) => {
@@ -168,12 +166,29 @@ export default function Elections() {
   };
 
   const handleDeleteElection = (id: string) => {
-    setDeleteElectionId(id);
+    const target = displayElections.find(
+      (e) => (e._id?.toString() || e.id?.toString()) === id
+    );
+    if (target && !isElectionEditable(target.status)) {
+      toast({
+        title: "Cannot delete election",
+        description: "Completed or archived elections cannot be deleted.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setPendingDeleteIds([id]);
+  };
+
+  const handleBulkDeleteClick = () => {
+    if (selection.selectedCount > 0) {
+      setPendingDeleteIds([...selection.selectedIds]);
+    }
   };
 
   const confirmDelete = () => {
-    if (deleteElectionId) {
-      deleteMutation.mutate(deleteElectionId);
+    if (pendingDeleteIds?.length) {
+      deleteElectionsMutation.mutate(pendingDeleteIds);
     }
   };
 
@@ -208,16 +223,35 @@ export default function Elections() {
   const displayElections = getFilteredElections();
   const displayFranchises = franchises || [];
 
+  const getElectionRowId = (election: ElectionWithDetails) =>
+    election._id?.toString() || election.id?.toString() || "";
+
+  const deletableElectionIds = displayElections
+    .filter((e) => isElectionEditable(e.status))
+    .map(getElectionRowId)
+    .filter(Boolean);
+
+  const selection = useBulkDeleteMode(deletableElectionIds);
+
   return (
     <MainLayout>
+      <PageContent>
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Elections</h1>
-          <p className="text-sm text-gray-600">Manage all your election campaigns</p>
+          <p className="text-sm text-gray-600">
+            Select an election to manage its nominees and voters
+          </p>
         </div>
-        <div className="mt-4 sm:mt-0 flex w-full gap-2 sm:w-auto">
+        <div className="mt-4 sm:mt-0 flex w-full items-center gap-2 sm:w-auto sm:flex-wrap sm:justify-end">
+          <DeleteModeButton
+            active={selection.deleteMode}
+            onClick={() =>
+              selection.deleteMode ? selection.exitDeleteMode() : selection.enterDeleteMode()
+            }
+          />
           <Link href="/elections/create">
-            <Button className="w-full sm:w-auto">
+            <Button size="sm" className="h-10 w-full justify-center px-3 sm:w-auto">
               <PlusIcon className="h-4 w-4 mr-2" />
               Create Election
             </Button>
@@ -257,11 +291,26 @@ export default function Elections() {
         <Skeleton className="h-96 w-full" />
       ) : (
         <>
+          <DeleteModeBar
+            active={selection.deleteMode}
+            count={selection.selectedCount}
+            entityLabel="election"
+            onCancel={selection.exitDeleteMode}
+            onConfirmDelete={handleBulkDeleteClick}
+            deleting={deleteElectionsMutation.isPending}
+          />
           <ElectionsTable 
             elections={displayElections} 
-            onDelete={handleDeleteElection}
+            onDelete={selection.deleteMode ? undefined : handleDeleteElection}
             onStatusChange={handleStatusChange}
+            selectionMode={selection.showSelectors}
+            isSelected={selection.isSelected}
+            onToggleSelect={selection.toggle}
+            allSelected={selection.allSelected}
+            someSelected={selection.someSelected}
+            onToggleSelectAll={selection.toggleAll}
           />
+          <PageBottom>
           {electionsPagination && (
             <PaginationControls
               page={electionsPagination.page}
@@ -271,32 +320,29 @@ export default function Elections() {
               onPageChange={setPage}
             />
           )}
+          </PageBottom>
         </>
       )}
 
-      <AlertDialog 
-        open={deleteElectionId !== null} 
-        onOpenChange={(open) => !open && setDeleteElectionId(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the
-              election and all related data.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmDelete}
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      </PageContent>
+
+      <ConfirmDialog
+        open={!!pendingDeleteIds?.length}
+        onOpenChange={(open) => !open && setPendingDeleteIds(null)}
+        onConfirm={confirmDelete}
+        loading={deleteElectionsMutation.isPending}
+        title="Are you sure?"
+        description={
+          pendingDeleteIds && pendingDeleteIds.length > 1
+            ? `This will permanently delete ${pendingDeleteIds.length} elections and all related data. This action cannot be undone.`
+            : "This action cannot be undone. This will permanently delete the election and all related data."
+        }
+        confirmText={
+          pendingDeleteIds && pendingDeleteIds.length > 1
+            ? `Delete ${pendingDeleteIds.length} elections`
+            : "Delete election"
+        }
+      />
     </MainLayout>
   );
 }

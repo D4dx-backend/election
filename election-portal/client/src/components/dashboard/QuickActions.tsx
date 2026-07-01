@@ -30,17 +30,17 @@ export function QuickActions({ recentActivity }: QuickActionsProps) {
             </Button>
           </Link>
           
-          <Link href="/nominees">
+          <Link href="/elections">
             <Button variant="outline" className="w-full" size="lg">
               <UserPlus className="mr-2 h-4 w-4" />
-              Manage Nominees
+              Manage Elections
             </Button>
           </Link>
           
-          <Link href="/analytics">
+          <Link href="/reports">
             <Button variant="outline" className="w-full" size="lg">
               <BarChart className="mr-2 h-4 w-4" />
-              View Analytics
+              View Reports
             </Button>
           </Link>
         </div>

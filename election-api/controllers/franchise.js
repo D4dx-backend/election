@@ -37,8 +37,8 @@ exports.updateFranchiseById = async (req, res) => {
     if (!existing) return res.status(404).json({ success: false, message: "Franchise not found." });
     assertFranchiseAccess(req.user, existing);
 
-    if (req.file) {
-      req.body.logo = { url: `/uploads/${req.file.filename}`, alt: req.body.name };
+    if (req.file?.cdnUrl) {
+      req.body.logo = { url: req.file.cdnUrl, alt: req.body.name };
     }
     const franchise = await franchises.updateById(req.params.id, req.body);
     res.status(200).json({ success: true, data: franchise });
@@ -64,8 +64,8 @@ exports.addFranchise = async (req, res) => {
     if (existingFranchise) {
       return res.status(409).json({ success: false, message: "Franchise already exists." });
     }
-    if (req.file) {
-      req.body.logo = { url: `/uploads/${req.file.filename}`, alt: req.body.name };
+    if (req.file?.cdnUrl) {
+      req.body.logo = { url: req.file.cdnUrl, alt: req.body.name };
     }
     const franchise = await franchises.create(req.body);
     await logUserActivity(req.user._id, req.ip, "Created", franchise.name, "Franchise");

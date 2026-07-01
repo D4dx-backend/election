@@ -1,153 +1,286 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { format } from "date-fns";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { AlertCircle, FileText, BarChart3, ExternalLink } from "lucide-react";
+import { PageContent } from "@/components/layout/PageContent";
+import { getElectionLabel } from "@/lib/electionHelpers";
+import { apiRequest } from "@/lib/queryClient";
+import { DashboardStats, ElectionWithDetails } from "@/lib/types";
 
-interface ElectionRow {
-  _id: string;
-  name?: string;
-  title?: string;
-  status?: string;
-  startDate?: string;
-  endDate?: string;
-  totalVotes?: number;
-  votesCount?: number;
+function getElectionId(election: ElectionWithDetails) {
+  return election._id?.toString() || election.id?.toString() || "";
 }
 
-function statusColor(status?: string) {
-  const s = (status || "").toLowerCase();
-  if (s === "active" || s === "ongoing") return "bg-green-100 text-green-800";
-  if (s === "completed" || s === "closed") return "bg-gray-200 text-gray-700";
-  if (s === "scheduled" || s === "upcoming") return "bg-blue-100 text-blue-800";
-  if (s === "draft") return "bg-amber-100 text-amber-800";
-  return "bg-gray-100 text-gray-800";
+function statusBadgeClass(status?: string) {
+  switch ((status || "").toLowerCase()) {
+    case "active":
+      return "bg-green-100 text-green-800 border-green-200";
+    case "completed":
+      return "bg-blue-100 text-blue-800 border-blue-200";
+    case "draft":
+      return "bg-amber-100 text-amber-800 border-amber-200";
+    case "archived":
+      return "bg-gray-100 text-gray-700 border-gray-200";
+    default:
+      return "bg-gray-100 text-gray-800 border-gray-200";
+  }
 }
 
-function formatDate(value?: string) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString();
+function formatStatus(status?: string) {
+  if (!status) return "Unknown";
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 export default function Reports() {
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
   useEffect(() => {
     document.title = "Reports | Vote+";
   }, []);
 
-  const { data, isLoading, error } = useQuery<ElectionRow[]>({
-    queryKey: ["/api/elections"],
+  const {
+    data: electionsResponse,
+    isLoading: electionsLoading,
+    error: electionsError,
+  } = useQuery<{ success?: boolean; data?: ElectionWithDetails[] }>({
+    queryKey: ["/api/elections", "reports"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/elections");
+      return res.json();
+    },
   });
 
-  const elections = Array.isArray(data) ? data : [];
-  const total = elections.length;
-  const active = elections.filter(
-    (e) => ["active", "ongoing"].includes((e.status || "").toLowerCase())
-  ).length;
-  const completed = elections.filter(
-    (e) => ["completed", "closed"].includes((e.status || "").toLowerCase())
-  ).length;
+  const {
+    data: dashboardStats,
+    isLoading: statsLoading,
+    error: statsError,
+  } = useQuery<DashboardStats>({
+    queryKey: ["/api/analytics/dashboard", "reports"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/analytics/dashboard");
+      const body = await res.json();
+      if (!body.success || !body.data) {
+        throw new Error(body.message || "Failed to load dashboard stats");
+      }
+      return body.data as DashboardStats;
+    },
+  });
+
+  const elections = Array.isArray(electionsResponse?.data) ? electionsResponse.data : [];
+
+  const counts = useMemo(() => {
+    const total = elections.length;
+    const active = elections.filter((e) => e.status === "active").length;
+    const completed = elections.filter((e) => e.status === "completed").length;
+    const draft = elections.filter((e) => e.status === "draft").length;
+    const archived = elections.filter((e) => e.status === "archived").length;
+    return { total, active, completed, draft, archived };
+  }, [elections]);
+
+  const filteredElections = useMemo(() => {
+    if (statusFilter === "all") return elections;
+    return elections.filter((e) => e.status === statusFilter);
+  }, [elections, statusFilter]);
+
+  const isLoading = electionsLoading || statsLoading;
+  const loadError = electionsError || statsError;
 
   return (
     <MainLayout>
+      <PageContent>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <FileText className="h-6 w-6 text-primary" />
           Reports
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Overview of elections and quick access to results.
+          Summary of all elections — active, completed, and overall participation.
         </p>
       </div>
 
-      {error && (
+      {loadError && (
         <Alert variant="destructive" className="mb-4">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Could not load reports</AlertTitle>
-          <AlertDescription>{(error as Error).message}</AlertDescription>
+          <AlertDescription>{(loadError as Error).message}</AlertDescription>
         </Alert>
       )}
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-primary">{isLoading ? "—" : total}</p>
-            <p className="text-xs text-gray-500 mt-1">Total Elections</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-green-600">{isLoading ? "—" : active}</p>
-            <p className="text-xs text-gray-500 mt-1">Active</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-gray-600">{isLoading ? "—" : completed}</p>
-            <p className="text-xs text-gray-500 mt-1">Completed</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+        {[
+          { label: "Total Elections", value: counts.total, className: "text-primary" },
+          { label: "Active", value: counts.active, className: "text-green-600" },
+          { label: "Completed", value: counts.completed, className: "text-blue-600" },
+          { label: "Draft", value: counts.draft, className: "text-amber-600" },
+          { label: "Votes Cast", value: dashboardStats?.votesCast ?? "—", className: "text-gray-900" },
+        ].map(({ label, value, className }) => (
+          <Card key={label}>
+            <CardContent className="p-4 text-center">
+              <p className={`text-2xl font-bold ${className}`}>
+                {isLoading ? "—" : value}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">{label}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-gray-900">Election Reports</h2>
-        <Link href="/analytics">
-          <Button variant="outline" size="sm" className="gap-1">
-            <BarChart3 className="h-4 w-4" />
-            Analytics
-          </Button>
-        </Link>
-      </div>
-
-      {isLoading ? (
-        <div className="space-y-3">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-lg" />
-          ))}
-        </div>
-      ) : elections.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-gray-500">
-            No elections found yet.
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {elections.map((e) => (
-            <Card key={e._id}>
-              <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium text-gray-900 truncate">
-                      {e.name || e.title || "Untitled Election"}
-                    </p>
-                    <Badge className={statusColor(e.status)}>{e.status || "—"}</Badge>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {formatDate(e.startDate)} → {formatDate(e.endDate)}
-                    {typeof (e.totalVotes ?? e.votesCount) === "number" && (
-                      <span className="ml-2">· {e.totalVotes ?? e.votesCount} votes</span>
-                    )}
-                  </p>
-                </div>
-                <Link href={`/elections/${e._id}`}>
-                  <Button variant="outline" size="sm" className="gap-1 shrink-0">
-                    <ExternalLink className="h-4 w-4" />
-                    Open Election
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
-          ))}
+      {!isLoading && dashboardStats && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+          <Card>
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Registered voters (franchise)</p>
+                <p className="text-xl font-bold text-gray-900">{dashboardStats.totalVoters}</p>
+              </div>
+              <Badge variant="outline" className="bg-white">
+                {dashboardStats.activeElections} active now
+              </Badge>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-gray-500">Overall turnout</p>
+              <p className="text-xl font-bold text-gray-900">
+                {dashboardStats.totalVoters > 0
+                  ? `${Math.round((dashboardStats.votesCast / dashboardStats.totalVoters) * 100)}%`
+                  : "—"}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                {dashboardStats.votesCast} ballots of {dashboardStats.totalVoters} voters
+              </p>
+            </CardContent>
+          </Card>
         </div>
       )}
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b">
+          <CardTitle className="text-lg">Election Reports</CardTitle>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-44">
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="archived">Archived</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="p-4 space-y-3">
+              {[...Array(4)].map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : filteredElections.length === 0 ? (
+            <div className="py-12 text-center text-gray-500">
+              {elections.length === 0
+                ? "No elections found yet."
+                : "No elections match this filter."}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="bg-white">Election</TableHead>
+                    <TableHead className="bg-white">Date</TableHead>
+                    <TableHead className="bg-white">Status</TableHead>
+                    <TableHead className="bg-white text-right">Nominees</TableHead>
+                    <TableHead className="bg-white text-right">Voters</TableHead>
+                    <TableHead className="bg-white">Voting</TableHead>
+                    <TableHead className="bg-white text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredElections.map((election) => {
+                    const id = getElectionId(election);
+                    return (
+                      <TableRow key={id}>
+                        <TableCell>
+                          <div className="min-w-[160px]">
+                            <p className="font-medium text-gray-900">{getElectionLabel(election)}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600 whitespace-nowrap">
+                          {election.electionDate
+                            ? format(new Date(election.electionDate), "yyyy-MM-dd")
+                            : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={statusBadgeClass(election.status)}>
+                            {formatStatus(election.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {election.nomineeCount ?? 0}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {election.voterCount ?? 0}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-0.5 text-xs">
+                            <span className={election.votingOpen ? "text-green-600" : "text-gray-500"}>
+                              {election.votingOpen ? "Open" : "Closed"}
+                            </span>
+                            {election.resultsPublished && (
+                              <span className="text-blue-600">Results published</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex flex-wrap justify-end gap-1.5">
+                            <Link href={`/elections/${id}`}>
+                              <Button variant="outline" size="sm" className="gap-1 h-8">
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                Open
+                              </Button>
+                            </Link>
+                            <Link href={`/elections/${id}?tab=results`}>
+                              <Button variant="outline" size="sm" className="gap-1 h-8">
+                                <BarChart3 className="h-3.5 w-3.5" />
+                                Analytics
+                              </Button>
+                            </Link>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      </PageContent>
     </MainLayout>
   );
 }

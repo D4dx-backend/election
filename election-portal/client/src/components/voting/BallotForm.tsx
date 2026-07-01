@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ElectionWithDetails, VoteValidationError } from "@/lib/types";
+import { getElectionLabel } from "@/lib/electionHelpers";
 import { Nominee } from "@shared/schema";
 
 interface BallotFormProps {
@@ -81,8 +82,8 @@ export function BallotForm({ election, nominees, onSubmit }: BallotFormProps) {
   return (
     <Card className="mb-6">
       <div className="bg-primary text-white px-6 py-4 rounded-t-lg">
-        <h2 className="text-xl font-bold">{election.title}</h2>
-        <p className="text-sm">{election.organization} - {new Date(election.electionDate).toLocaleDateString()}</p>
+        <h2 className="text-xl font-bold">{getElectionLabel(election)}</h2>
+        <p className="text-sm">{new Date(election.electionDate).toLocaleDateString()}</p>
       </div>
       <CardContent className="p-6">
         <div className="mb-6">
@@ -136,7 +137,7 @@ export function BallotForm({ election, nominees, onSubmit }: BallotFormProps) {
           ))}
         </div>
 
-        <div className="bg-gray-50 p-4 rounded-lg mb-6">
+        <div className="bg-white p-4 rounded-lg mb-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-700">Selection Summary</p>
