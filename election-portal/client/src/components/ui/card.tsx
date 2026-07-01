@@ -64,6 +64,18 @@ const CardContent = React.forwardRef<
 ))
 CardContent.displayName = "CardContent"
 
+const CardScrollContent = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("scrollable-content p-6 pt-0", className)}
+    {...props}
+  />
+))
+CardScrollContent.displayName = "CardScrollContent"
+
 const CardFooter = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
@@ -76,4 +88,4 @@ const CardFooter = React.forwardRef<
 ))
 CardFooter.displayName = "CardFooter"
 
-export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent }
+export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent, CardScrollContent }

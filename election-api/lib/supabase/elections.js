@@ -1,6 +1,7 @@
 const { getSupabase } = require("../../config/supabase");
 const { mapElection, electionToRow } = require("./map");
 const { isUuid } = require("./users");
+const { resolvePublicImageUrl } = require("../spacesStorage");
 
 async function create(data) {
   const supabase = getSupabase();
@@ -129,7 +130,10 @@ async function findByIdsWithFranchise(ids, { votingOpen } = {}) {
         id: row.franchises.id,
         name: row.franchises.name,
         logo: row.franchises.logo_url
-          ? { url: row.franchises.logo_url, alt: row.franchises.logo_alt }
+          ? {
+              url: resolvePublicImageUrl(row.franchises.logo_url),
+              alt: row.franchises.logo_alt,
+            }
           : undefined,
       };
     }

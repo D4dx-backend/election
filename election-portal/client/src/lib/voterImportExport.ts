@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { apiRequest } from "@/lib/queryClient";
 import type { Election, User } from "@/lib/types";
+import { getElectionLabel } from "@/lib/electionHelpers";
 
 export type VoterRow = User & { _id?: string; id?: string; electionAccess?: string[] };
 
@@ -54,8 +55,8 @@ function resolveElectionIds(
     const lower = part.toLowerCase();
     const byTitle = elections.find(
       (e) =>
-        e.title?.toLowerCase() === lower ||
-        `${e.title} - ${e.organization}`.toLowerCase() === lower
+        e.organization?.toLowerCase() === lower ||
+        getElectionLabel(e).toLowerCase() === lower
     );
     if (byTitle) ids.push(getRecordId(byTitle));
   }
@@ -158,6 +159,22 @@ export async function importVotersFromRows(
   return result;
 }
 
+/** Client-side voter search (username, full name, registration #). */
+export function filterVotersBySearch<T extends {
+  username?: string;
+  fullName?: string;
+  registrationNumber?: string;
+}>(voters: T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return voters;
+  return voters.filter((v) => {
+    const fields = [v.username, v.fullName, v.registrationNumber].map((f) =>
+      (f || "").toLowerCase()
+    );
+    return fields.some((f) => f.includes(q));
+  });
+}
+
 export async function fetchAllVoters(params: {
   electionId?: string;
   search?: string;
@@ -199,7 +216,7 @@ export function exportVotersToExcel(
   options: { electionFilterLabel?: string } = {}
 ) {
   const electionMap = new Map(
-    elections.map((e) => [getRecordId(e), `${e.title} - ${e.organization}`])
+    elections.map((e) => [getRecordId(e), getElectionLabel(e)])
   );
 
   const excelData = voters.map((voter) => {

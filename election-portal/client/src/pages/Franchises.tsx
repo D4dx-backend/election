@@ -11,9 +11,15 @@ import { Badge } from "@/components/ui/badge";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DeleteModeBar } from "@/components/ui/delete-mode-bar";
+import { DeleteModeButton } from "@/components/ui/delete-mode-button";
+import { RowSelectCheckbox } from "@/components/ui/row-select-checkbox";
+import { useBulkDeleteMode } from "@/hooks/useBulkDeleteMode";
+import { deleteByIds } from "@/lib/bulkDelete";
 import { PlusCircle, Edit, Trash2, Globe, Phone, Image } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { MainLayout } from "@/components/layout/MainLayout";
+import { PageContent } from "@/components/layout/PageContent";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Pagination } from "@/lib/types";
 
@@ -88,8 +94,8 @@ export default function Franchises() {
   const [newPassword, setNewPassword] = useState("");
 
   // Delete confirmation state
-  const [deleteFranchiseId, setDeleteFranchiseId] = useState<string | null>(null);
-  const [deleteAdminId, setDeleteAdminId] = useState<string | null>(null);
+  const [pendingDeleteFranchiseIds, setPendingDeleteFranchiseIds] = useState<string[] | null>(null);
+  const [pendingDeleteAdminIds, setPendingDeleteAdminIds] = useState<string[] | null>(null);
 
   const { toast } = useToast();
   const [location, navigate] = useLocation();
@@ -144,28 +150,53 @@ export default function Franchises() {
     }
   });
 
-  // Delete franchise mutation
-  const deleteFranchiseMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await apiRequest("DELETE", `/api/franchises/${id}`);
-      return response.json();
-    },
-    onSuccess: () => {
+  const franchisePageIds = franchises.map((f) => f._id).filter(Boolean);
+  const franchiseSelection = useBulkDeleteMode(franchisePageIds);
+  const adminPageIds = franchiseAdmins.map((a) => a._id).filter(Boolean);
+  const adminSelection = useBulkDeleteMode(adminPageIds);
+
+  const deleteFranchisesMutation = useMutation({
+    mutationFn: async (ids: string[]) => deleteByIds(ids, (id) => `/api/franchises/${id}`),
+    onSuccess: (result, ids) => {
+      setPendingDeleteFranchiseIds(null);
+      franchiseSelection.exitDeleteMode();
+      queryClient.invalidateQueries({ queryKey: ["/api/franchises"] });
       toast({
-        title: "Franchise deleted",
-        description: "The franchise has been deleted successfully.",
-        variant: "success"
+        title: ids.length === 1 ? "Franchise deleted" : "Franchises deleted",
+        description:
+          result.failed.length === 0
+            ? `${result.deleted.length} franchise(s) deleted successfully.`
+            : `${result.deleted.length} deleted, ${result.failed.length} failed.`,
+        variant: result.failed.length ? "destructive" : "success",
       });
-      setDeleteFranchiseId(null);
-      queryClient.invalidateQueries({ queryKey: ['/api/franchises'] });
     },
     onError: (error: Error) => {
+      toast({ title: "Error deleting franchise(s)", description: error.message, variant: "destructive" });
+      setPendingDeleteFranchiseIds(null);
+    },
+  });
+
+  const deleteAdminsMutation = useMutation({
+    mutationFn: async (ids: string[]) => deleteByIds(ids, (id) => `/api/users/${id}`),
+    onSuccess: (result, ids) => {
+      setPendingDeleteAdminIds(null);
+      adminSelection.exitDeleteMode();
+      if (selectedFranchise) {
+        fetchFranchiseAdmins(selectedFranchise._id);
+      }
       toast({
-        title: "Error deleting franchise",
-        description: error.message,
-        variant: "destructive"
+        title: ids.length === 1 ? "Administrator deleted" : "Administrators deleted",
+        description:
+          result.failed.length === 0
+            ? `${result.deleted.length} administrator(s) removed.`
+            : `${result.deleted.length} deleted, ${result.failed.length} failed.`,
+        variant: result.failed.length ? "destructive" : "success",
       });
-    }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error deleting administrator(s)", description: error.message, variant: "destructive" });
+      setPendingDeleteAdminIds(null);
+    },
   });
   
   // Update franchise mutation
@@ -246,34 +277,6 @@ export default function Franchises() {
     }
   });
   
-  // Delete franchise admin mutation
-  const deleteFranchiseAdminMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await apiRequest("DELETE", `/api/users/${id}`);
-      return response.json();
-    },
-    onSuccess: () => {
-      toast({
-        title: "Admin deleted",
-        description: "Franchise administrator has been removed successfully.",
-        variant: "success"
-      });
-      setDeleteAdminId(null);
-
-      // Refresh the franchise admins list
-      if (selectedFranchise) {
-        fetchFranchiseAdmins(selectedFranchise._id);
-      }
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error deleting admin",
-        description: error.message,
-        variant: "destructive"
-      });
-    }
-  });
-
   const handleCreateFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     
@@ -325,7 +328,11 @@ export default function Franchises() {
   };
 
   const handleDeleteFranchise = (id: string) => {
-    setDeleteFranchiseId(id);
+    setPendingDeleteFranchiseIds([id]);
+  };
+
+  const handleDeleteAdmin = (id: string) => {
+    setPendingDeleteAdminIds([id]);
   };
 
   const resetCreateForm = () => {
@@ -373,10 +380,6 @@ export default function Franchises() {
       ...adminFormData,
       franchiseId: selectedFranchise?._id || adminFormData.franchiseId,
     });
-  };
-  
-  const handleDeleteAdmin = (id: string) => {
-    setDeleteAdminId(id);
   };
   
   const handleEditSubmit = (e: React.FormEvent) => {
@@ -507,15 +510,17 @@ export default function Franchises() {
 
   return (
     <MainLayout>
-      <div className="container mx-auto py-6">
-            <div className="mb-6 flex justify-between items-center">
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight">Franchises</h1>
-                <p className="text-gray-500 mt-1">Manage your franchises and their settings</p>
+      <PageContent>
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h1 className="text-2xl font-bold text-gray-900">Franchises</h1>
+                <p className="text-sm text-gray-600 mt-1">
+                  Manage your franchises and their settings
+                </p>
               </div>
               <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button className="ml-auto">
+                  <Button size="sm" className="h-10 w-full shrink-0 justify-center sm:w-auto">
                     <PlusCircle className="mr-2 h-4 w-4" />
                     Add Franchise
                   </Button>
@@ -697,7 +702,29 @@ export default function Franchises() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Current Admins List */}
                     <div>
-                      <h3 className="font-medium text-lg mb-3">Current Administrators</h3>
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <h3 className="font-medium text-lg">Current Administrators</h3>
+                        <DeleteModeButton
+                          active={adminSelection.deleteMode}
+                          onClick={() =>
+                            adminSelection.deleteMode
+                              ? adminSelection.exitDeleteMode()
+                              : adminSelection.enterDeleteMode()
+                          }
+                          compact
+                        />
+                      </div>
+                      <DeleteModeBar
+                        active={adminSelection.deleteMode}
+                        count={adminSelection.selectedCount}
+                        entityLabel="administrator"
+                        onCancel={adminSelection.exitDeleteMode}
+                        onConfirmDelete={() =>
+                          adminSelection.selectedCount > 0 &&
+                          setPendingDeleteAdminIds([...adminSelection.selectedIds])
+                        }
+                        deleting={deleteAdminsMutation.isPending}
+                      />
                       {franchiseAdmins.length === 0 ? (
                         <p className="text-gray-500 italic">No administrators found for this franchise.</p>
                       ) : (
@@ -705,9 +732,16 @@ export default function Franchises() {
                           {franchiseAdmins.map((admin) => (
                             <div 
                               key={admin._id} 
-                              className="flex items-center justify-between bg-gray-50 p-3 rounded-md"
+                              className="flex items-center justify-between bg-white p-3 rounded-md gap-2"
                             >
-                              <div>
+                              {adminSelection.showSelectors && (
+                              <RowSelectCheckbox
+                                checked={adminSelection.isSelected(admin._id)}
+                                onCheckedChange={() => adminSelection.toggle(admin._id)}
+                                aria-label={`Select ${admin.fullName || admin.username}`}
+                              />
+                              )}
+                              <div className="min-w-0 flex-1">
                                 <div className="font-medium">{admin.fullName}</div>
                                 <div className="text-sm text-gray-500">{admin.email}</div>
                                 <div className="text-xs text-gray-400">Username: {admin.username}</div>
@@ -724,6 +758,7 @@ export default function Franchises() {
                                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                                   </svg>
                                 </Button>
+                                {!adminSelection.deleteMode && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -733,6 +768,7 @@ export default function Franchises() {
                                   <Trash2 className="h-4 w-4 mr-1" />
                                   Delete
                                 </Button>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -855,11 +891,22 @@ export default function Franchises() {
             </div>
 
             <Card>
-              <CardHeader className="px-6 py-4 border-b border-gray-200">
+              <CardHeader className="px-4 sm:px-6 py-4 border-b border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
                 <CardTitle className="text-lg font-medium text-gray-900">All Franchises</CardTitle>
                 <CardDescription>
                   View and manage all franchises in your election system
                 </CardDescription>
+                </div>
+                <DeleteModeButton
+                  active={franchiseSelection.deleteMode}
+                  onClick={() =>
+                    franchiseSelection.deleteMode
+                      ? franchiseSelection.exitDeleteMode()
+                      : franchiseSelection.enterDeleteMode()
+                  }
+                  className="shrink-0"
+                />
               </CardHeader>
               <CardContent className="p-0">
                 {isLoading ? (
@@ -874,11 +921,32 @@ export default function Franchises() {
                   </div>
                 ) : franchises && Array.isArray(franchises) && franchises.length > 0 ? (
                   <>
+                  <div className="px-4 pt-4">
+                    <DeleteModeBar
+                      active={franchiseSelection.deleteMode}
+                      count={franchiseSelection.selectedCount}
+                      entityLabel="franchise"
+                      onCancel={franchiseSelection.exitDeleteMode}
+                      onConfirmDelete={() =>
+                        franchiseSelection.selectedCount > 0 &&
+                        setPendingDeleteFranchiseIds([...franchiseSelection.selectedIds])
+                      }
+                      deleting={deleteFranchisesMutation.isPending}
+                    />
+                  </div>
                   <div className="divide-y divide-gray-100 md:hidden">
                     {franchises.map((franchise: Franchise) => (
                       <div key={franchise._id} className="p-4 space-y-4">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-3">
+                          {franchiseSelection.showSelectors && (
+                          <RowSelectCheckbox
+                            checked={franchiseSelection.isSelected(franchise._id)}
+                            onCheckedChange={() => franchiseSelection.toggle(franchise._id)}
+                            aria-label={`Select ${franchise.name}`}
+                            className="mt-1"
+                          />
+                          )}
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
                             {franchise.logo?.url ? (
                               <img
                                 src={franchise.logo.url}
@@ -900,7 +968,7 @@ export default function Franchises() {
                           </Badge>
                         </div>
 
-                        <div className="grid gap-3 rounded-md bg-gray-50 p-3 text-sm">
+                        <div className="grid gap-3 rounded-md bg-white p-3 text-sm">
                           <div>
                             <p className="text-xs text-gray-500">Website</p>
                             {franchise.websiteUrl ? (
@@ -940,15 +1008,17 @@ export default function Franchises() {
                           >
                             Admins
                           </Button>
+                          {!franchiseSelection.deleteMode && (
                           <Button
                             variant="ghost"
                             size="sm"
                             className="text-red-600 hover:text-red-700 hover:bg-red-50"
                             onClick={() => handleDeleteFranchise(franchise._id)}
-                            disabled={deleteFranchiseMutation.isPending}
+                            disabled={deleteFranchisesMutation.isPending}
                           >
                             <Trash2 className="h-4 w-4 mr-1" /> Delete
                           </Button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -957,6 +1027,21 @@ export default function Franchises() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        {franchiseSelection.showSelectors && (
+                        <TableHead className="w-7 px-1">
+                          <RowSelectCheckbox
+                            checked={
+                              franchiseSelection.allSelected
+                                ? true
+                                : franchiseSelection.someSelected
+                                  ? "indeterminate"
+                                  : false
+                            }
+                            onCheckedChange={() => franchiseSelection.toggleAll()}
+                            aria-label="Select all franchises on this page"
+                          />
+                        </TableHead>
+                        )}
                         <TableHead>Name</TableHead>
                         <TableHead>Website</TableHead>
                         <TableHead>Contact</TableHead>
@@ -968,6 +1053,15 @@ export default function Franchises() {
                     <TableBody>
                       {franchises.map((franchise: Franchise) => (
                         <TableRow key={franchise._id}>
+                          {franchiseSelection.showSelectors && (
+                          <TableCell className="w-7 px-1">
+                            <RowSelectCheckbox
+                              checked={franchiseSelection.isSelected(franchise._id)}
+                              onCheckedChange={() => franchiseSelection.toggle(franchise._id)}
+                              aria-label={`Select ${franchise.name}`}
+                            />
+                          </TableCell>
+                          )}
                           <TableCell className="font-medium">
                             <div className="flex items-center">
                               {franchise.logo?.url ? (
@@ -1039,16 +1133,18 @@ export default function Franchises() {
                                 </svg>
                                 Admins
                               </Button>
+                              {!franchiseSelection.deleteMode && (
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 className="text-red-600 hover:text-red-700"
                                 onClick={() => handleDeleteFranchise(franchise._id)}
-                                disabled={deleteFranchiseMutation.isPending}
+                                disabled={deleteFranchisesMutation.isPending}
                               >
                                 <Trash2 className="h-4 w-4 mr-1" />
                                 Delete
                               </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -1076,26 +1172,47 @@ export default function Franchises() {
                 </CardFooter>
               ) : null}
             </Card>
-          </div>
+      </PageContent>
 
           <ConfirmDialog
-            open={!!deleteFranchiseId}
-            onOpenChange={(open) => !open && setDeleteFranchiseId(null)}
-            onConfirm={() => deleteFranchiseId && deleteFranchiseMutation.mutate(deleteFranchiseId)}
-            loading={deleteFranchiseMutation.isPending}
-            title="Delete franchise?"
-            description="This will permanently delete the franchise and may affect its associated data. This action cannot be undone."
-            confirmText="Delete franchise"
+            open={!!pendingDeleteFranchiseIds?.length}
+            onOpenChange={(open) => !open && setPendingDeleteFranchiseIds(null)}
+            onConfirm={() =>
+              pendingDeleteFranchiseIds?.length &&
+              deleteFranchisesMutation.mutate(pendingDeleteFranchiseIds)
+            }
+            loading={deleteFranchisesMutation.isPending}
+            title="Are you sure?"
+            description={
+              pendingDeleteFranchiseIds && pendingDeleteFranchiseIds.length > 1
+                ? `This will permanently delete ${pendingDeleteFranchiseIds.length} franchises and may affect associated data. This action cannot be undone.`
+                : "This will permanently delete the franchise and may affect its associated data. This action cannot be undone."
+            }
+            confirmText={
+              pendingDeleteFranchiseIds && pendingDeleteFranchiseIds.length > 1
+                ? `Delete ${pendingDeleteFranchiseIds.length} franchises`
+                : "Delete franchise"
+            }
           />
 
           <ConfirmDialog
-            open={!!deleteAdminId}
-            onOpenChange={(open) => !open && setDeleteAdminId(null)}
-            onConfirm={() => deleteAdminId && deleteFranchiseAdminMutation.mutate(deleteAdminId)}
-            loading={deleteFranchiseAdminMutation.isPending}
-            title="Delete administrator?"
-            description="This will permanently remove this franchise administrator's access. This action cannot be undone."
-            confirmText="Delete administrator"
+            open={!!pendingDeleteAdminIds?.length}
+            onOpenChange={(open) => !open && setPendingDeleteAdminIds(null)}
+            onConfirm={() =>
+              pendingDeleteAdminIds?.length && deleteAdminsMutation.mutate(pendingDeleteAdminIds)
+            }
+            loading={deleteAdminsMutation.isPending}
+            title="Are you sure?"
+            description={
+              pendingDeleteAdminIds && pendingDeleteAdminIds.length > 1
+                ? `This will permanently remove ${pendingDeleteAdminIds.length} franchise administrators. This action cannot be undone.`
+                : "This will permanently remove this franchise administrator's access. This action cannot be undone."
+            }
+            confirmText={
+              pendingDeleteAdminIds && pendingDeleteAdminIds.length > 1
+                ? `Delete ${pendingDeleteAdminIds.length} administrators`
+                : "Delete administrator"
+            }
           />
     </MainLayout>
   );

@@ -4,124 +4,98 @@ import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ElectionForm } from "@/components/elections/ElectionForm";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { extractApiList } from "@/lib/apiHelpers";
+import { queryClient } from "@/lib/queryClient";
 
 export default function CreateElection() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  
-  const [userRole, setUserRole] = useState<string>('');
-  const [franchiseId, setFranchiseId] = useState<string>('');
 
-  // Fetch current user
+  const [userRole, setUserRole] = useState<string>("");
+  const [franchiseId, setFranchiseId] = useState<string>("");
+
   const { data: user, isLoading: isLoadingUser } = useQuery({
-    queryKey: ['/api/auth/me']
+    queryKey: ["/api/auth/me"],
   });
-  
+
   useEffect(() => {
     if (user) {
-      // Set user role and franchise ID if available
       if (user.role) setUserRole(user.role);
       if (user.franchiseId) setFranchiseId(user.franchiseId);
     }
   }, [user]);
 
-  // Fetch franchises (only needed for super_admin role)
   const { data: franchises, isLoading: isLoadingFranchises } = useQuery({
-    queryKey: ['/api/franchises'],
-    enabled: userRole === 'super_admin'
+    queryKey: ["/api/franchises"],
+    enabled: userRole === "super_admin",
   });
 
-  // Fetch election groups
-  const { data: electionGroupsRaw, isLoading: isLoadingGroups } = useQuery({
-    queryKey: ['/api/election-groups'],
-    queryFn: async () => {
-      const res = await apiRequest('GET', '/api/election-groups');
-      return res.json();
-    },
-  });
-  const electionGroups = extractApiList(electionGroupsRaw);
-
-  const handleSubmit = async (formData: any) => {
+  const handleSubmit = async (formData: Record<string, unknown>) => {
     try {
-      // Clone the form data to avoid modifying the original
       const { logoFile, ...submitData } = formData;
-      
-      // If user is a franchise_admin, automatically set the franchiseId
-      if (userRole === 'franchise_admin' && franchiseId) {
+
+      if (userRole === "franchise_admin" && franchiseId) {
         submitData.franchiseId = franchiseId;
       }
 
-      console.log("Submitting election data:", submitData);
-
-      // When a banner/logo file is chosen, send multipart FormData so the
-      // backend (multer) can store it; otherwise send plain JSON.
       let response: Response;
       if (logoFile instanceof File) {
         const body = new FormData();
         Object.entries(submitData).forEach(([key, value]) => {
           if (value !== undefined && value !== null) body.append(key, String(value));
         });
-        body.append('logo', logoFile);
-        response = await fetch('/api/elections', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+        body.append("logo", logoFile);
+        response = await fetch("/api/elections", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` },
           body,
         });
       } else {
-        response = await fetch('/api/elections', {
-          method: 'POST',
+        response = await fetch("/api/elections", {
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("authToken")}`,
           },
-          body: JSON.stringify(submitData)
+          body: JSON.stringify(submitData),
         });
       }
-      
+
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to create election');
+        throw new Error(errorData.message || "Failed to create election");
       }
-      
-      const result = await response.json();
-      
-      // Show success toast
+
       toast({
         title: "Election created",
         description: "The election has been successfully created.",
         variant: "success",
       });
-      
-      // Navigate to elections list
-      queryClient.invalidateQueries({ queryKey: ['/api/elections'] });
+
+      queryClient.invalidateQueries({ queryKey: ["/api/elections"] });
       navigate("/elections");
     } catch (error) {
-      console.error('Error creating election:', error);
+      console.error("Error creating election:", error);
       toast({
         title: "Error",
         description: "There was a problem creating the election. Please try again.",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
 
-  const handleCancel = () => {
-    navigate("/elections");
-  };
+  const handleCancel = () => navigate("/elections");
 
   useEffect(() => {
     document.title = "Create Election | Vote+";
   }, []);
 
-  const isLoading = isLoadingUser || isLoadingGroups || (userRole === 'super_admin' && isLoadingFranchises);
+  const isLoading = isLoadingUser || (userRole === "super_admin" && isLoadingFranchises);
 
   if (isLoading) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           <span className="ml-3">Loading...</span>
         </div>
       </MainLayout>
@@ -136,9 +110,8 @@ export default function CreateElection() {
       </div>
 
       <ElectionForm
-        electionGroups={electionGroups || []}
-        franchises={userRole === 'super_admin' ? franchises || [] : []}
-        showFranchiseSelect={userRole === 'super_admin'}
+        franchises={userRole === "super_admin" ? franchises || [] : []}
+        showFranchiseSelect={userRole === "super_admin"}
         onSubmit={handleSubmit}
         onCancel={handleCancel}
       />

@@ -38,6 +38,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { extractApiList, normalizeEntityId } from "@/lib/apiHelpers";
 import { ElectionMultiPicker } from "@/components/elections/ElectionMultiPicker";
 import { PaginationControls } from "@/components/ui/pagination-controls";
+import { PageContent, PageBottom } from "@/components/layout/PageContent";
 import { Pagination } from "@/lib/types";
 import {
   AlertDialog,
@@ -356,6 +357,7 @@ export default function ElectionGroups() {
 
   return (
     <MainLayout>
+      <PageContent>
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Election Groups</h1>
@@ -616,7 +618,7 @@ export default function ElectionGroups() {
                         <h3 className="font-semibold text-gray-900 truncate">{group.name}</h3>
                         <p className="text-sm text-gray-500 line-clamp-2">{group.description || 'No description'}</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-3 rounded-md bg-gray-50 p-3 text-sm">
+                      <div className="grid grid-cols-2 gap-3 rounded-md bg-white p-3 text-sm">
                         <div>
                           <p className="text-xs text-gray-500">Franchise</p>
                           <p className="font-medium text-gray-900 truncate">{franchise?.name || 'Unknown franchise'}</p>
@@ -735,19 +737,20 @@ export default function ElectionGroups() {
               </Button>
             </div>
           )}
-          {electionGroupsPagination && electionGroupsPagination.total > 0 && (
-            <div className="px-6 pb-4">
-              <PaginationControls
-                page={electionGroupsPagination.page}
-                totalPages={electionGroupsPagination.totalPages ?? 1}
-                total={electionGroupsPagination.total}
-                pageSize={electionGroupsPagination.pageSize}
-                onPageChange={setPage}
-              />
-            </div>
-          )}
         </CardContent>
       </Card>
+      {electionGroupsPagination && electionGroupsPagination.total > 0 && (
+        <PageBottom>
+          <PaginationControls
+            page={electionGroupsPagination.page}
+            totalPages={electionGroupsPagination.totalPages ?? 1}
+            total={electionGroupsPagination.total}
+            pageSize={electionGroupsPagination.pageSize}
+            onPageChange={setPage}
+          />
+        </PageBottom>
+      )}
+      </PageContent>
     </MainLayout>
   );
 }

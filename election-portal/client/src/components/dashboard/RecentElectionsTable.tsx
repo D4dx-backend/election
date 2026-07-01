@@ -1,4 +1,5 @@
 import { Vote, Users, Calendar } from "lucide-react";
+import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { format } from "date-fns";
+import { getElectionLabel, getElectionSubtitle, isElectionEditable } from "@/lib/electionHelpers";
 import { Link } from "wouter";
 import { ElectionWithDetails } from "@/lib/types";
 
@@ -44,12 +45,14 @@ export function RecentElectionsTable({ elections }: RecentElectionsTableProps) {
               <div key={electionId} className="p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="font-semibold text-gray-900 truncate">{election.title}</h3>
-                    <p className="text-sm text-gray-500 truncate">{election.organization}</p>
+                    <h3 className="font-semibold text-gray-900 truncate">{getElectionLabel(election)}</h3>
+                    {getElectionSubtitle(election) && (
+                      <p className="text-sm text-gray-500 truncate">{getElectionSubtitle(election)}</p>
+                    )}
                   </div>
                   <StatusBadge status={election.status} />
                 </div>
-                <div className="grid grid-cols-2 gap-3 rounded-md bg-gray-50 p-3 text-sm">
+                <div className="grid grid-cols-2 gap-3 rounded-md bg-white p-3 text-sm">
                   <div>
                     <p className="text-xs text-gray-500">Date</p>
                     <p className="font-medium text-gray-900">{format(new Date(election.electionDate), 'yyyy-MM-dd')}</p>
@@ -64,11 +67,15 @@ export function RecentElectionsTable({ elections }: RecentElectionsTableProps) {
                   <Link href={`/elections/${electionId}`}>
                     <Button variant="outline" size="sm">View</Button>
                   </Link>
-                  <Link href={`/elections/${electionId}/edit`}>
-                    <Button variant="ghost" size="sm">
-                      {election.status === 'completed' ? 'Results' : 'Edit'}
-                    </Button>
-                  </Link>
+                  {isElectionEditable(election.status) ? (
+                    <Link href={`/elections/${electionId}/edit`}>
+                      <Button variant="ghost" size="sm">Edit</Button>
+                    </Link>
+                  ) : (
+                    <Link href={`/elections/${electionId}?tab=results`}>
+                      <Button variant="ghost" size="sm">Results</Button>
+                    </Link>
+                  )}
                 </div>
               </div>
             );
@@ -78,12 +85,11 @@ export function RecentElectionsTable({ elections }: RecentElectionsTableProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="bg-gray-50">Election</TableHead>
-                <TableHead className="bg-gray-50">Organization</TableHead>
-                <TableHead className="bg-gray-50">Date</TableHead>
-                <TableHead className="bg-gray-50">Status</TableHead>
-                <TableHead className="bg-gray-50">Participation</TableHead>
-                <TableHead className="bg-gray-50 text-right">Actions</TableHead>
+                <TableHead className="bg-white">Election</TableHead>
+                <TableHead className="bg-white">Date</TableHead>
+                <TableHead className="bg-white">Status</TableHead>
+                <TableHead className="bg-white">Participation</TableHead>
+                <TableHead className="bg-white text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -96,12 +102,9 @@ export function RecentElectionsTable({ elections }: RecentElectionsTableProps) {
                   : 0;
 
                 return (
-                  <TableRow key={electionId} className="transition-colors hover:bg-gray-50">
+                  <TableRow key={electionId} className="transition-colors hover:bg-primary/5">
                     <TableCell className="font-medium">
-                      {election.title}
-                    </TableCell>
-                    <TableCell>
-                      {election.organization}
+                      {getElectionLabel(election)}
                     </TableCell>
                     <TableCell>
                       {format(new Date(election.electionDate), 'yyyy-MM-dd')}
@@ -123,11 +126,19 @@ export function RecentElectionsTable({ elections }: RecentElectionsTableProps) {
                           View
                         </Button>
                       </Link>
-                      <Link href={`/elections/${electionId}/edit`}>
-                        <Button variant="link" className="text-gray-600 hover:text-gray-900">
-                          {election.status === 'completed' ? 'Results' : 'Edit'}
-                        </Button>
-                      </Link>
+                      {isElectionEditable(election.status) ? (
+                        <Link href={`/elections/${electionId}/edit`}>
+                          <Button variant="link" className="text-gray-600 hover:text-gray-900">
+                            Edit
+                          </Button>
+                        </Link>
+                      ) : (
+                        <Link href={`/elections/${electionId}?tab=results`}>
+                          <Button variant="link" className="text-gray-600 hover:text-gray-900">
+                            Results
+                          </Button>
+                        </Link>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -156,7 +167,7 @@ function StatusBadge({ status }: { status: string }) {
       );
     case 'draft':
       return (
-        <Badge variant="outline" className="bg-gray-100 text-gray-800 hover:bg-gray-100">
+        <Badge variant="outline" className="bg-gray-100 text-gray-800 hover:bg-primary/10">
           Draft
         </Badge>
       );
@@ -168,7 +179,7 @@ function StatusBadge({ status }: { status: string }) {
       );
     default:
       return (
-        <Badge variant="outline" className="bg-gray-100 text-gray-800 hover:bg-gray-100">
+        <Badge variant="outline" className="bg-gray-100 text-gray-800 hover:bg-primary/10">
           {status}
         </Badge>
       );

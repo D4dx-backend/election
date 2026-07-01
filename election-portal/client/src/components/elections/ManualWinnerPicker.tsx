@@ -1,0 +1,145 @@
+import { useEffect, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { SelectCheckbox } from "@/components/ui/row-select-checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Trophy } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+
+interface ResultNominee {
+  _id?: string;
+  id?: string;
+  name: string;
+  voteCount?: number;
+  isElected?: boolean;
+}
+
+interface ManualWinnerPickerProps {
+  electionId: string;
+  enabled: boolean;
+  numberToBeElected: number;
+  nominees: ResultNominee[];
+  manualWinnerIds?: string[];
+}
+
+export function ManualWinnerPicker({
+  electionId,
+  enabled,
+  numberToBeElected,
+  nominees,
+  manualWinnerIds = [],
+}: ManualWinnerPickerProps) {
+  const { toast } = useToast();
+  const [selected, setSelected] = useState<string[]>(manualWinnerIds.map(String));
+
+  useEffect(() => {
+    setSelected(manualWinnerIds.map(String));
+  }, [manualWinnerIds.join(",")]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (nomineeIds: string[]) => {
+      const res = await apiRequest("PATCH", `/api/elections/${electionId}/manual-winners`, { nomineeIds });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/elections/${electionId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vote/results", electionId] });
+      toast({
+        title: "Winners saved",
+        description: "Manual winner selection has been updated.",
+        variant: "success",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Could not save winners",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  if (!enabled) return null;
+
+  const seats = Math.max(numberToBeElected, 1);
+
+  const toggleNominee = (id: string, checked: boolean) => {
+    setSelected((prev) => {
+      if (checked) {
+        if (prev.includes(id)) return prev;
+        if (prev.length >= seats) {
+          toast({
+            title: "Maximum reached",
+            description: `You can select at most ${seats} winner(s).`,
+            variant: "destructive",
+          });
+          return prev;
+        }
+        return [...prev, id];
+      }
+      return prev.filter((x) => x !== id);
+    });
+  };
+
+  return (
+    <Card className="mb-6 border-blue-200">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-blue-600" />
+              Manual Winner Selection
+            </CardTitle>
+            <p className="text-sm text-gray-600 mt-1">
+              Pick up to {seats} winner{seats !== 1 ? "s" : ""} after voting. Results use your selection instead of vote tallies.
+            </p>
+          </div>
+          <Badge variant="outline" className="shrink-0">
+            {selected.length}/{seats} selected
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {nominees.length === 0 ? (
+          <p className="text-sm text-gray-500">Add nominees before selecting winners.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {nominees.map((nominee) => {
+              const id = String(nominee._id || nominee.id);
+              const checked = selected.includes(id);
+              return (
+                <div
+                  key={id}
+                  className="flex items-start gap-2 rounded-md border p-3 bg-white"
+                >
+                  <SelectCheckbox
+                    checked={checked}
+                    onCheckedChange={(value) => toggleNominee(id, value)}
+                    aria-label={`Select ${nominee.name} as winner`}
+                    className="mt-0.5"
+                  />
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm">{nominee.name}</p>
+                    {nominee.voteCount !== undefined && (
+                      <p className="text-xs text-gray-500">{nominee.voteCount} vote(s)</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex justify-end">
+          <Button
+            onClick={() => saveMutation.mutate(selected)}
+            disabled={saveMutation.isPending || nominees.length === 0}
+          >
+            {saveMutation.isPending ? "Saving…" : "Save Winners"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

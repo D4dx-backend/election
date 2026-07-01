@@ -1,5 +1,6 @@
 const { getSupabase } = require("../../config/supabase");
 const { mapUser, userToRow } = require("./map");
+const { matchesVoterSearch } = require("./searchHelpers");
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -35,6 +36,32 @@ async function attachElectionAccess(users) {
   return users.map((u) => {
     const id = String(u.id || u._id);
     return { ...u, electionAccess: accessMap.get(id) || [] };
+  });
+}
+
+async function attachFranchiseDetails(users) {
+  if (!users.length) return users;
+  const franchiseIds = [
+    ...new Set(users.map((u) => u.franchiseId).filter(Boolean).map(String)),
+  ];
+  if (!franchiseIds.length) return users;
+
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("franchises")
+    .select("id, name")
+    .in("id", franchiseIds);
+  if (error) throw error;
+
+  const nameById = new Map((data || []).map((row) => [String(row.id), row.name]));
+  return users.map((user) => {
+    const franchiseId = user.franchiseId ? String(user.franchiseId) : null;
+    if (!franchiseId) return user;
+    const name = nameById.get(franchiseId);
+    return {
+      ...user,
+      franchiseDetails: name ? { _id: franchiseId, name } : { _id: franchiseId },
+    };
   });
 }
 
@@ -103,6 +130,27 @@ async function findAll(filter = {}) {
   if (error) throw error;
   const users = (data || []).map((row) => mapUser(row));
   return attachElectionAccess(users);
+}
+
+async function findPaginated(filter = {}, { page = 1, limit = 10 } = {}) {
+  const supabase = getSupabase();
+  let query = supabase.from("users").select("*", { count: "exact" });
+
+  if (filter.role) query = query.eq("role", filter.role);
+  if (filter.franchiseId) query = query.eq("franchise_id", filter.franchiseId);
+  if (filter.isVoter !== undefined) query = query.eq("is_voter", filter.isVoter);
+  if (filter.status) query = query.eq("status", filter.status);
+
+  const pageNum = Math.max(page, 1);
+  const pageSize = Math.max(limit, 1);
+  query = query.order("created_at", { ascending: false });
+  query = query.range((pageNum - 1) * pageSize, pageNum * pageSize - 1);
+
+  const { data, count, error } = await query;
+  if (error) throw error;
+  const users = (data || []).map((row) => mapUser(row));
+  const withAccess = await attachElectionAccess(users);
+  return { users: withAccess, total: count || 0 };
 }
 
 async function countDocuments(filter = {}) {
@@ -313,15 +361,92 @@ async function getAllVoters({
   franchiseId,
 }) {
   const supabase = getSupabase();
+  const searchTerm = String(search || "").trim();
+
+  let assignedSet = null;
+  if (forElectionId && isUuid(forElectionId)) {
+    const assigned = await getAssignedVoterIdsForElection(forElectionId);
+    assignedSet = new Set(assigned.map(String));
+  }
+
+  /** Reliable text search: filter in Node (PostgREST ilike.or is flaky). */
+  if (searchTerm) {
+    let poolQuery = supabase
+      .from("users")
+      .select("id, username, full_name, registration_number, created_at")
+      .eq("is_voter", true)
+      .order("created_at", { ascending: false });
+
+    if (status) poolQuery = poolQuery.eq("status", status);
+    if (franchiseId) poolQuery = poolQuery.eq("franchise_id", franchiseId);
+
+    if (electionId && electionId !== "all") {
+      const ids = await getUserIdsWithElectionAccess(electionId);
+      if (ids.length === 0) return { voters: [], total: 0 };
+      poolQuery = poolQuery.in("id", ids);
+    }
+
+    if (notInElection && notInElection !== "all" && !forElectionId) {
+      if (!isUuid(notInElection)) {
+        const err = new Error("Invalid notInElection id.");
+        err.statusCode = 400;
+        throw err;
+      }
+      const assignedIds = await getAssignedVoterIdsForElection(notInElection);
+      if (assignedIds.length) {
+        poolQuery = poolQuery.not("id", "in", `(${assignedIds.join(",")})`);
+      }
+    }
+
+    if (notInGroup && isUuid(notInGroup)) {
+      const { data: groupVoters, error: gvErr } = await supabase
+        .from("voter_group_voters")
+        .select("user_id")
+        .eq("voter_group_id", notInGroup);
+      if (gvErr) throw gvErr;
+      const excludeIds = (groupVoters || []).map((r) => r.user_id);
+      if (excludeIds.length) {
+        poolQuery = poolQuery.not("id", "in", `(${excludeIds.join(",")})`);
+      }
+    }
+
+    const { data: pool, error: poolError } = await poolQuery;
+    if (poolError) throw poolError;
+
+    const filtered = (pool || []).filter((row) => matchesVoterSearch(row, searchTerm));
+    const total = filtered.length;
+    const from = (page - 1) * pageSize;
+    const pageSlice = filtered.slice(from, from + pageSize);
+
+    if (pageSlice.length === 0) {
+      return { voters: [], total };
+    }
+
+    const pageIds = pageSlice.map((r) => r.id);
+    const { data, error } = await supabase.from("users").select("*").in("id", pageIds);
+    if (error) throw error;
+
+    const byId = new Map((data || []).map((row) => [row.id, row]));
+    let voters = pageIds
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .map((row) => stripPassword(mapUser(row)));
+    voters = await attachElectionAccess(voters);
+
+    if (assignedSet) {
+      voters = voters.map((v) => ({
+        ...v,
+        isAssignedToElection: assignedSet.has(String(v.id || v._id)),
+      }));
+    }
+
+    return { voters, total };
+  }
+
   let query = supabase.from("users").select("*", { count: "exact" }).eq("is_voter", true);
 
   if (status) query = query.eq("status", status);
   if (franchiseId) query = query.eq("franchise_id", franchiseId);
-
-  if (search && search.trim()) {
-    const term = `%${search.trim()}%`;
-    query = query.or(`username.ilike.${term},full_name.ilike.${term}`);
-  }
 
   if (electionId && electionId !== "all") {
     const ids = await getUserIdsWithElectionAccess(electionId);
@@ -329,12 +454,6 @@ async function getAllVoters({
       return { voters: [], total: 0 };
     }
     query = query.in("id", ids);
-  }
-
-  let assignedSet = null;
-  if (forElectionId && isUuid(forElectionId)) {
-    const assigned = await getAssignedVoterIdsForElection(forElectionId);
-    assignedSet = new Set(assigned.map(String));
   }
 
   if (notInElection && notInElection !== "all" && !forElectionId) {
@@ -345,7 +464,6 @@ async function getAllVoters({
     }
     const assignedIds = await getAssignedVoterIdsForElection(notInElection);
     if (assignedIds.length) {
-      // PostgREST expects: id=not.in.(uuid1,uuid2)
       query = query.not("id", "in", `(${assignedIds.join(",")})`);
     }
   }
@@ -398,6 +516,7 @@ module.exports = {
   findByEmail,
   findOne,
   findAll,
+  findPaginated,
   countDocuments,
   create,
   insertMany,
@@ -411,6 +530,7 @@ module.exports = {
   setElectionAccess,
   getElectionAccessForUsers,
   attachElectionAccess,
+  attachFranchiseDetails,
   userHasElectionAccess,
   stripPassword,
 };

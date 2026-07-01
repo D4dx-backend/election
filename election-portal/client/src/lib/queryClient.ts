@@ -25,7 +25,10 @@ async function throwIfResNotOk(res: Response) {
 
 // Helper function to add authorization header if token exists
 function getAuthHeaders(includeContentType = false) {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    "Cache-Control": "no-cache",
+    Pragma: "no-cache",
+  };
   
   if (includeContentType) {
     headers["Content-Type"] = "application/json";
@@ -40,6 +43,11 @@ function getAuthHeaders(includeContentType = false) {
   return headers;
 }
 
+const noStoreFetchInit: RequestInit = {
+  credentials: "include",
+  cache: "no-store",
+};
+
 // API request function for mutations
 export async function apiRequest(
   method: string,
@@ -47,11 +55,34 @@ export async function apiRequest(
   data?: unknown | undefined,
 ): Promise<Response> {
   const res = await fetch(url, {
+    ...noStoreFetchInit,
     method,
     headers: getAuthHeaders(!!data),
     body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
   });
+
+  await throwIfResNotOk(res);
+  return res;
+}
+
+/** Multipart/form-data uploads (do not set Content-Type — browser sets boundary). */
+export async function apiFormRequest(
+  method: string,
+  url: string,
+  formData: FormData,
+): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...noStoreFetchInit,
+      method,
+      headers: getAuthHeaders(false),
+      body: formData,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Network error";
+    throw new Error(`Failed to fetch: ${detail}`);
+  }
 
   await throwIfResNotOk(res);
   return res;
@@ -67,7 +98,7 @@ export const getQueryFn: <T>(options: {
     const url = queryKey[0] as string;
     
     const res = await fetch(url, {
-      credentials: "include",
+      ...noStoreFetchInit,
       headers: getAuthHeaders(),
     });
 

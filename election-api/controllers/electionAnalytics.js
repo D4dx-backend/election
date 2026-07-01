@@ -5,14 +5,36 @@ const franchises = require("../lib/supabase/franchises");
 const users = require("../lib/supabase/users");
 const { sendVoteReminders: runSendVoteReminders } = require("../lib/reminders/sendVoteReminders");
 const { logUserActivity } = require("../utils/auditLog");
+const { canAccessElection, denyUnlessCanAccessElection } = require("../lib/electionAccess");
+
+async function filterAnalyticsForUser(user, rows) {
+  const filtered = [];
+  for (const row of rows) {
+    if (!row?.electionId) {
+      if (user?.role === "super_admin") filtered.push(row);
+      continue;
+    }
+    const election = await elections.findById(row.electionId);
+    if (election && (await canAccessElection(user, election))) {
+      filtered.push(row);
+    }
+  }
+  return filtered;
+}
 
 exports.getDashboardStats = async (req, res) => {
   try {
     const role = req.user?.role;
     const franchiseId = req.user?.franchiseId;
-    const scopeToFranchise = role === "franchise_admin" && franchiseId;
+    const electionFilter = {};
 
-    const electionFilter = scopeToFranchise ? { franchiseId } : {};
+    if (role === "franchise_admin" && franchiseId) {
+      electionFilter.franchiseId = franchiseId;
+    } else if (role === "election_admin") {
+      const ids = Array.isArray(req.user?.electionAccess) ? req.user.electionAccess : [];
+      electionFilter.ids = ids;
+    }
+
     const electionList = await elections.findLean(electionFilter);
     const electionIds = electionList.map((e) => e._id);
     const totalElections = electionList.length;
@@ -21,11 +43,11 @@ exports.getDashboardStats = async (req, res) => {
     ).length;
 
     const voterFilter = { isVoter: true };
-    if (scopeToFranchise) voterFilter.franchiseId = franchiseId;
+    if (role === "franchise_admin" && franchiseId) voterFilter.franchiseId = franchiseId;
     const totalVoters = await users.countDocuments(voterFilter);
 
-    const voteFilter = scopeToFranchise ? { electionIds } : {};
-    const votesCast = await votes.countDocuments(voteFilter);
+    const voteFilter = electionIds.length ? { electionIds } : { electionIds: [] };
+    const votesCast = electionIds.length ? await votes.countDocuments(voteFilter) : 0;
 
     const totalFranchises =
       role === "super_admin"
@@ -82,6 +104,12 @@ exports.getDashboardStats = async (req, res) => {
 exports.sendVoteReminders = async (req, res) => {
   try {
     const { electionId } = req.params;
+    const election = await elections.findById(electionId);
+    if (!election) {
+      return res.status(404).json({ success: false, message: "Election not found." });
+    }
+    if (await denyUnlessCanAccessElection(req, res, election)) return;
+
     const result = await runSendVoteReminders(electionId);
 
     await logUserActivity(
@@ -104,6 +132,19 @@ exports.sendVoteReminders = async (req, res) => {
 
 exports.addElectionAnalytics = async (req, res) => {
   try {
+    if (req.body?.electionId) {
+      const election = await elections.findById(req.body.electionId);
+      if (!election) {
+        return res.status(404).json({ success: false, message: "Election not found." });
+      }
+      if (await denyUnlessCanAccessElection(req, res, election)) return;
+    } else if (req.user?.role !== "super_admin") {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allowed to create analytics without an election.",
+      });
+    }
+
     const analytics = await electionAnalytics.create(req.body);
     res.status(201).json({ success: true, message: "Election analytics created.", analytics });
   } catch (err) {
@@ -114,7 +155,7 @@ exports.addElectionAnalytics = async (req, res) => {
 
 exports.getElectionAnalytics = async (req, res) => {
   try {
-    const data = await electionAnalytics.findAll();
+    const data = await filterAnalyticsForUser(req.user, await electionAnalytics.findAll());
     res.status(200).json({ success: true, data });
   } catch (err) {
     console.error("Controller Error in getElectionAnalytics:", err.message);
@@ -129,6 +170,15 @@ exports.getElectionAnalytic = async (req, res) => {
     if (!analytic) {
       return res.status(404).json({ success: false, message: "Election analytic not found." });
     }
+    if (analytic.electionId) {
+      const election = await elections.findById(analytic.electionId);
+      if (!election) {
+        return res.status(404).json({ success: false, message: "Election not found." });
+      }
+      if (await denyUnlessCanAccessElection(req, res, election)) return;
+    } else if (req.user?.role !== "super_admin") {
+      return res.status(403).json({ success: false, message: "You are not allowed to access this analytic." });
+    }
     res.status(200).json({ success: true, data: analytic });
   } catch (err) {
     console.error("Controller Error in getElectionAnalytic:", err.message);
@@ -139,6 +189,21 @@ exports.getElectionAnalytic = async (req, res) => {
 exports.updateElectionAnalytics = async (req, res) => {
   try {
     const { id } = req.params;
+    const existing = await electionAnalytics.findById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Election analytics not found." });
+    }
+    const electionId = req.body?.electionId || existing.electionId;
+    if (electionId) {
+      const election = await elections.findById(electionId);
+      if (!election) {
+        return res.status(404).json({ success: false, message: "Election not found." });
+      }
+      if (await denyUnlessCanAccessElection(req, res, election)) return;
+    } else if (req.user?.role !== "super_admin") {
+      return res.status(403).json({ success: false, message: "You are not allowed to update this analytic." });
+    }
+
     const analytics = await electionAnalytics.updateById(id, req.body);
     if (!analytics) {
       return res.status(404).json({ success: false, message: "Election analytics not found." });
@@ -153,6 +218,20 @@ exports.updateElectionAnalytics = async (req, res) => {
 exports.deleteElectionAnalytics = async (req, res) => {
   try {
     const { id } = req.params;
+    const existing = await electionAnalytics.findById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Election analytics not found." });
+    }
+    if (existing.electionId) {
+      const election = await elections.findById(existing.electionId);
+      if (!election) {
+        return res.status(404).json({ success: false, message: "Election not found." });
+      }
+      if (await denyUnlessCanAccessElection(req, res, election)) return;
+    } else if (req.user?.role !== "super_admin") {
+      return res.status(403).json({ success: false, message: "You are not allowed to delete this analytic." });
+    }
+
     const analytics = await electionAnalytics.deleteById(id);
     if (!analytics) {
       return res.status(404).json({ success: false, message: "Election analytics not found." });

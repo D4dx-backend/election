@@ -21,7 +21,6 @@ import {
   Bell,
   Lock,
   LogOut,
-  Settings as SettingsIcon,
   Shield,
   SlidersHorizontal,
   User as UserIcon,
@@ -133,18 +132,14 @@ export default function Settings() {
 
   return (
     <AccountShell title="Settings">
-      <div className="max-w-3xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <SettingsIcon className="h-6 w-6 text-primary" />
-            Settings
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Manage security, notifications, and app preferences.
-          </p>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+        <p className="text-sm text-gray-600">
+          Manage security, notifications, and app preferences.
+        </p>
+      </div>
 
-        <Tabs defaultValue="security" className="space-y-4">
+      <Tabs defaultValue="security" className="space-y-4">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="security">Security</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
@@ -329,8 +324,7 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
-        </Tabs>
-      </div>
+      </Tabs>
     </AccountShell>
   );
 }

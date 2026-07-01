@@ -17,10 +17,21 @@ type VoterForSlip = User & { plainPassword?: string; _id?: string };
 interface VoterSlipPrinterProps {
   voter: VoterForSlip;
   electionNames: string[];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }
 
-export function VoterSlipPrinter({ voter, electionNames }: VoterSlipPrinterProps) {
-  const [open, setOpen] = useState(false);
+export function VoterSlipPrinter({
+  voter,
+  electionNames,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
+}: VoterSlipPrinterProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const { toast } = useToast();
 
   // Use the stored plain-text password when available; fall back gracefully
@@ -191,17 +202,19 @@ Elections: ${electionNames.join(', ') || 'None assigned'}
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
+      {!hideTrigger && (
       <DialogTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+          className="h-8 w-8 text-gray-400 hover:text-gray-700 hover:bg-primary/10"
           aria-label="Print voter slip"
           title="Print voter slip"
         >
           <Printer className="h-4 w-4" />
         </Button>
       </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Voter Credentials</DialogTitle>

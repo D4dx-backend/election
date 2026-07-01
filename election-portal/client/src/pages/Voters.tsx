@@ -1,13 +1,21 @@
 import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useLocation } from "wouter";
+import {
+  buildAllVotersUrl,
+  buildVoterGroupsListUrl,
+  navigateVotersPage,
+  useVoterPageParams,
+} from "@/lib/voterGroupNav";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { VoterBulkGenerator } from "@/components/voters/VoterBulkGenerator";
 import { VotersTable } from "@/components/voters/VotersTable";
 import { BulkVoterSlipPrinter } from "@/components/voters/BulkVoterSlipPrinter";
 import VoterGroups from "@/pages/VoterGroups";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { PlusIcon, Upload, AlertCircle, UsersRound, Search, UserPlus, Download, FileSpreadsheet } from "lucide-react";
+import { SelectCheckbox } from "@/components/ui/row-select-checkbox";
+import { PlusIcon, Upload, AlertCircle, UsersRound, Download, MoreHorizontal, Search, UserPlus, FileSpreadsheet, Printer, Users } from "lucide-react";
 import { assignVotersToElection } from "@/lib/assignVoters";
 import {
   downloadVoterImportTemplate,
@@ -17,7 +25,8 @@ import {
   parseVoterImportFile,
   type ParsedVoterImportRow,
 } from "@/lib/voterImportExport";
-import { BulkVoterGenerationOptions, Pagination, User, Election, ElectionGroup } from "@/lib/types";
+import { BulkVoterGenerationOptions, Pagination, User, Election } from "@/lib/types";
+import { getElectionLabel, isElectionLocked } from "@/lib/electionHelpers";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,21 +48,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DeleteModeBar } from "@/components/ui/delete-mode-bar";
+import { DeleteModeButton } from "@/components/ui/delete-mode-button";
+import { useBulkDeleteMode } from "@/hooks/useBulkDeleteMode";
+import { deleteByIds } from "@/lib/bulkDelete";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 type EntityRecord = { _id?: string; id?: string };
 type VoterRecord = User & EntityRecord & { electionAccess?: string[] };
 type ElectionRecord = Election & EntityRecord;
-type VoterGroupResponse = { data?: ElectionGroup[] };
 type VotersResponse = { data?: VoterRecord[]; pagination?: Pagination };
 type ElectionsResponse = { data?: ElectionRecord[] };
 
@@ -61,12 +71,20 @@ function getRecordId(record: EntityRecord): string {
   return record._id?.toString() || record.id?.toString() || "";
 }
 
-export default function Voters({ embedded = false, electionId }: { embedded?: boolean; electionId?: string } = {}) {
+function getVotersPageTab(): "voters" | "groups" {
+  return new URLSearchParams(window.location.search).get("tab") === "voters" ? "voters" : "groups";
+}
+
+export default function Voters({ embedded = false, electionId, readOnly = false }: { embedded?: boolean; electionId?: string; readOnly?: boolean } = {}) {
+  const [location, navigate] = useLocation();
+  const voterPageParams = useVoterPageParams();
+  const [sectionTab, setSectionTab] = useState<"voters" | "groups">(getVotersPageTab);
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  const [deleteVoterId, setDeleteVoterId] = useState<string | null>(null);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(null);
   const { toast } = useToast();
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const searchQuery = useDebouncedValue(searchInput, 300);
   const [selectedElectionId, setSelectedElectionId] = useState<string>(electionId || "all");
   const [createVoterOpen, setCreateVoterOpen] = useState(false);
   const [createVoterMode, setCreateVoterMode] = useState<'choice' | 'existing' | 'new'>('choice');
@@ -74,6 +92,7 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
   const [selectedExistingVoterIds, setSelectedExistingVoterIds] = useState<string[]>([]);
   const [existingVoterElectionId, setExistingVoterElectionId] = useState(electionId || "");
   const [bulkVoterOpen, setBulkVoterOpen] = useState(false);
+  const [printSlipsOpen, setPrintSlipsOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<ParsedVoterImportRow[]>([]);
@@ -113,17 +132,16 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
     return params.toString();
   };
   
-  // Fetch voters with pagination
   const { 
     data: votersResponse, 
     isLoading: votersLoading, 
+    isFetching: votersFetching,
     isError: votersError,
     refetch: refetchVoters
   } = useQuery<VotersResponse>({
     queryKey: ['/api/users/voters', selectedElectionId, page, pageSize, searchQuery],
     queryFn: async () => {
       const queryString = getVotersQueryString();
-      console.log(`Fetching voters with query params: ${queryString}`);
       const response = await apiRequest('GET', `/api/users/voters?${queryString}`);
       return response.json();
     },
@@ -152,16 +170,6 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
       return res.json();
     },
     enabled: createVoterOpen && createVoterMode === 'existing',
-  });
-
-  // Fetch election groups for the bulk generator
-  const {
-    data: electionGroups,
-    isLoading: electionGroupsLoading,
-    isError: electionGroupsError
-  } = useQuery<VoterGroupResponse>({
-    queryKey: ['/api/election-groups'],
-    refetchOnWindowFocus: false
   });
 
   // Fetch voter groups for the bulk generator
@@ -311,36 +319,46 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
     }
   });
 
-  // Mutation for deleting a voter
-  const deleteVoterMutation = useMutation({
-    mutationFn: async (voterId: string) => {
-      await apiRequest('DELETE', `/api/users/voters/${voterId}`);
-    },
-    onSuccess: () => {
+  const deleteVotersMutation = useMutation({
+    mutationFn: async (ids: string[]) =>
+      deleteByIds(ids, (id) => `/api/users/voters/${id}`),
+    onSuccess: (result, ids) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users/voters"] });
+      setPendingDeleteIds(null);
+      selection.exitDeleteMode();
+
+      if (result.failed.length === 0) {
+        toast({
+          title: ids.length === 1 ? "Voter deleted" : "Voters deleted",
+          description:
+            ids.length === 1
+              ? "The voter has been successfully deleted."
+              : `${result.deleted.length} voter(s) deleted successfully.`,
+          variant: "success",
+        });
+        return;
+      }
+
       toast({
-        title: "Voter deleted",
-        description: "The voter has been successfully deleted",
-        variant: "success"
+        title: "Some deletions failed",
+        description: `${result.deleted.length} deleted, ${result.failed.length} failed.`,
+        variant: "destructive",
       });
-      
-      // Invalidate and refetch voters
-      queryClient.invalidateQueries({ queryKey: ['/api/users/voters'] });
-      
-      setDeleteVoterId(null);
     },
     onError: (error) => {
       toast({
         title: "Delete failed",
-        description: `Failed to delete voter: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        variant: "destructive"
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
       });
-      
-      setDeleteVoterId(null);
-    }
+      setPendingDeleteIds(null);
+    },
   });
 
   // Use data from API responses
   const voters = votersResponse?.data || [];
+  const voterPageIds = voters.map((v) => getRecordId(v)).filter(Boolean);
+  const selection = useBulkDeleteMode(voterPageIds);
   const pagination = votersResponse?.pagination || {
     page,
     pageSize,
@@ -412,7 +430,7 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
       }
       const label =
         selectedElectionId !== "all"
-          ? displayElections.find((e) => getRecordId(e) === selectedElectionId)?.title || "Filtered_Voters"
+          ? displayElections.find((e) => getRecordId(e) === selectedElectionId)?.organization || "Filtered_Voters"
           : "All_Voters";
       exportVotersToExcel(allVoters, displayElections, { electionFilterLabel: label });
       toast({
@@ -476,12 +494,18 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
   };
 
   const handleDeleteVoter = (id: string) => {
-    setDeleteVoterId(id);
+    setPendingDeleteIds([id]);
+  };
+
+  const handleBulkDeleteClick = () => {
+    if (selection.selectedCount > 0) {
+      setPendingDeleteIds([...selection.selectedIds]);
+    }
   };
 
   const confirmDelete = () => {
-    if (deleteVoterId) {
-      deleteVoterMutation.mutate(deleteVoterId);
+    if (pendingDeleteIds?.length) {
+      deleteVotersMutation.mutate(pendingDeleteIds);
     }
   };
 
@@ -503,14 +527,34 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
     });
   };
 
-  // Refetch voters when election filter or search changes
+  // Reset to page 1 when filters or debounced search change
   useEffect(() => {
     setPage(1);
-    refetchVoters();
   }, [selectedElectionId, searchQuery]);
 
   useEffect(() => {
-    if (!embedded) document.title = "Voters | Vote+";
+    if (!embedded) {
+      document.title = sectionTab === "groups" ? "Voter Groups | Vote+" : "Voters | Vote+";
+    }
+  }, [embedded, sectionTab]);
+
+  useEffect(() => {
+    if (!embedded) setSectionTab(voterPageParams.tab);
+  }, [location, embedded, voterPageParams.tab]);
+
+  const handleSectionTabChange = (value: string) => {
+    const nextTab = value === "groups" ? "groups" : "voters";
+    setSectionTab(nextTab);
+    if (!embedded) {
+      navigateVotersPage(
+        nextTab === "groups" ? buildVoterGroupsListUrl() : buildAllVotersUrl(),
+        navigate
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (embedded) document.title = "Voters | Vote+";
   }, [embedded]);
 
   // When embedded in an election workspace, scope bulk generation / create to
@@ -521,52 +565,46 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
   const bulkGeneratorElections = formElections
     .map((election) => ({
       _id: getRecordId(election),
-      title: election.title,
       organization: election.organization,
+      title: election.title,
     }))
     .filter((election) => election._id);
-  const bulkGeneratorGroups = (electionGroups?.data ?? [])
-    .map((group) => ({
-      _id: getRecordId(group),
-      name: group.name,
-    }))
-    .filter((group) => group._id);
+
+  const scopedElection = displayElections.find((e) => getRecordId(e) === selectedElectionId);
+  const isReadOnly =
+    readOnly ||
+    (embedded && electionId
+      ? isElectionLocked(displayElections.find((e) => getRecordId(e) === electionId)?.status)
+      : selectedElectionId !== "all" && isElectionLocked(scopedElection?.status));
 
   const Wrapper = embedded ? Fragment : MainLayout;
 
-  return (
-    <Wrapper>
-      {!embedded && (
-        <div className="mb-4">
-          <h1 className="text-2xl font-bold text-gray-900">Voter Management</h1>
-          <p className="text-sm text-gray-600">Create and manage voter accounts</p>
-        </div>
-      )}
-
-      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-          <Input
-            placeholder="Search voters..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-10 w-full sm:max-w-xs"
-          />
+  const votersListContent = (
+    <>
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Input
+              placeholder="Search by name or username..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="h-10 pl-9"
+            />
+          </div>
           {!embedded && (
-            <Select 
-              value={selectedElectionId} 
-              onValueChange={setSelectedElectionId}
-            >
-              <SelectTrigger className="h-10 w-full sm:w-64">
-                <SelectValue placeholder="Filter by election" />
+            <Select value={selectedElectionId} onValueChange={setSelectedElectionId}>
+              <SelectTrigger className="h-10 w-full sm:w-52">
+                <SelectValue placeholder="All elections" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Elections</SelectItem>
+                <SelectItem value="all">All elections</SelectItem>
                 {displayElections.map((election) => (
-                  <SelectItem 
-                    key={getRecordId(election)} 
-                    value={getRecordId(election) || 'unknown'}
+                  <SelectItem
+                    key={getRecordId(election)}
+                    value={getRecordId(election) || "unknown"}
                   >
-                    {election.title} - {election.organization}
+                    {getElectionLabel(election)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -574,40 +612,76 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-          <Button variant="outline" size="sm" className="h-10" onClick={handleImportVoters}>
-            <Upload className="h-4 w-4 mr-2" />
-            Import
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-10"
-            onClick={handleExportVoters}
-            disabled={isExporting}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            {isExporting ? "Exporting…" : "Export"}
-          </Button>
-          <Button variant="outline" size="sm" className="h-10" onClick={() => setBulkVoterOpen(true)}>
-            <UsersRound className="h-4 w-4 mr-2" />
-            Bulk
-          </Button>
-          <Button size="sm" className="h-10" onClick={handleAddVoter}>
-            <PlusIcon className="h-4 w-4 mr-2" />
-            Voter
-          </Button>
+        <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
+          {!isReadOnly && (
+            <>
+              <Button
+                size="sm"
+                className="h-10 w-full justify-center px-2 sm:w-auto sm:px-3"
+                onClick={handleAddVoter}
+              >
+                <PlusIcon className="h-4 w-4 shrink-0 sm:mr-2" />
+                <span className="truncate">
+                  <span className="sm:hidden">Add</span>
+                  <span className="hidden sm:inline">Add Voter</span>
+                </span>
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-10 w-full justify-center gap-1.5 px-2 sm:w-auto sm:px-3"
+                  >
+                    <MoreHorizontal className="h-4 w-4 shrink-0" />
+                    <span className="truncate">More</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={handleImportVoters}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import from Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleExportVoters} disabled={isExporting}>
+                    <Download className="h-4 w-4 mr-2" />
+                    {isExporting ? "Exporting…" : "Export to Excel"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setBulkVoterOpen(true)}>
+                    <UsersRound className="h-4 w-4 mr-2" />
+                    Bulk create
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setPrintSlipsOpen(true)}>
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print slips
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DeleteModeButton
+                active={selection.deleteMode}
+                onClick={() =>
+                  selection.deleteMode ? selection.exitDeleteMode() : selection.enterDeleteMode()
+                }
+              />
+            </>
+          )}
           <BulkVoterSlipPrinter
             voters={voters}
             elections={displayElections}
             selectedElectionId={selectedElectionId}
-            label="Print"
-            className="h-10"
+            open={printSlipsOpen}
+            onOpenChange={setPrintSlipsOpen}
+            hideTrigger={!isReadOnly}
           />
+          {isReadOnly && (
+            <Button variant="outline" size="sm" className="h-10" onClick={handleExportVoters} disabled={isExporting}>
+              <Download className="h-4 w-4 mr-2" />
+              {isExporting ? "Exporting…" : "Export"}
+            </Button>
+          )}
         </div>
       </div>
 
-      {(electionsError || electionGroupsError) && (
+      {electionsError && (
         <Alert variant="destructive" className="mb-4">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
@@ -627,21 +701,89 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
         </Alert>
       )}
 
-      {votersLoading ? (
+      {votersLoading || (votersFetching && !!searchQuery.trim()) ? (
         <Skeleton className="h-96 w-full" />
       ) : (
         <div className="space-y-6">
+          {!isReadOnly && (
+            <DeleteModeBar
+              active={selection.deleteMode}
+              count={selection.selectedCount}
+              entityLabel="voter"
+              onCancel={selection.exitDeleteMode}
+              onConfirmDelete={handleBulkDeleteClick}
+              deleting={deleteVotersMutation.isPending}
+            />
+          )}
           <VotersTable 
             voters={voters} 
             pagination={pagination}
             onPageChange={handlePageChange}
-            onEdit={handleEditVoter}
-            onDelete={handleDeleteVoter}
-            onExport={handleExportVoters}
+            onEdit={isReadOnly || selection.deleteMode ? undefined : handleEditVoter}
+            onDelete={isReadOnly || selection.deleteMode ? undefined : handleDeleteVoter}
             elections={displayElections}
+            selectionMode={selection.showSelectors}
+            isSelected={selection.isSelected}
+            onToggleSelect={selection.toggle}
+            allSelected={selection.allSelected}
+            someSelected={selection.someSelected}
+            onToggleSelectAll={selection.toggleAll}
           />
-          {embedded && <VoterGroups embedded electionId={electionId} />}
+          {embedded && !isReadOnly && <VoterGroups embedded electionId={electionId} />}
         </div>
+      )}
+    </>
+  );
+
+  return (
+    <Wrapper>
+      {!embedded ? (
+        <>
+          <div className="mb-5">
+            <h1 className="text-2xl font-bold text-gray-900">Voter Groups</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Manage groups and voter accounts in one place.
+            </p>
+          </div>
+
+          <nav
+            className="mb-6 flex gap-6 border-b border-gray-200"
+            aria-label="Voter sections"
+          >
+            <button
+              type="button"
+              onClick={() => handleSectionTabChange("groups")}
+              className={cn(
+                "-mb-px border-b-2 pb-3 text-sm font-medium transition-colors",
+                sectionTab === "groups"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-gray-500 hover:text-gray-800"
+              )}
+            >
+              Manage Groups
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSectionTabChange("voters")}
+              className={cn(
+                "-mb-px border-b-2 pb-3 text-sm font-medium transition-colors",
+                sectionTab === "voters"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-gray-500 hover:text-gray-800"
+              )}
+            >
+              All Voters
+            </button>
+          </nav>
+
+          {sectionTab === "groups" ? (
+            <VoterGroups embedded suppressTitle />
+          ) : (
+            votersListContent
+          )}
+        </>
+      ) : (
+        votersListContent
       )}
 
       <Dialog open={bulkVoterOpen} onOpenChange={setBulkVoterOpen}>
@@ -652,12 +794,11 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
               Generate multiple voter accounts and assign them to an election, group, or voter group.
             </DialogDescription>
           </DialogHeader>
-          {(electionsLoading || electionGroupsLoading) ? (
+          {(electionsLoading) ? (
             <Skeleton className="h-64 w-full" />
           ) : (
             <VoterBulkGenerator
               elections={bulkGeneratorElections}
-              electionGroups={bulkGeneratorGroups}
               voterGroups={voterGroupsData?.data || []}
               onGenerate={handleGenerateVoters}
               onCancel={() => setBulkVoterOpen(false)}
@@ -669,20 +810,23 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deleteVoterId} onOpenChange={(open) => !open && setDeleteVoterId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the voter account.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={!!pendingDeleteIds?.length}
+        onOpenChange={(open) => !open && setPendingDeleteIds(null)}
+        onConfirm={confirmDelete}
+        loading={deleteVotersMutation.isPending}
+        title="Are you sure?"
+        description={
+          pendingDeleteIds && pendingDeleteIds.length > 1
+            ? `This will permanently delete ${pendingDeleteIds.length} voter accounts. This action cannot be undone.`
+            : "This action cannot be undone. This will permanently delete the voter account."
+        }
+        confirmText={
+          pendingDeleteIds && pendingDeleteIds.length > 1
+            ? `Delete ${pendingDeleteIds.length} voters`
+            : "Delete voter"
+        }
+      />
 
       <Dialog open={createVoterOpen} onOpenChange={(open) => {
           setCreateVoterOpen(open);
@@ -744,15 +888,18 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
                     </p>
                   );
                   return filtered.map(u => (
-                    <label key={u._id} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
-                      <Checkbox
+                    <div key={u._id} className="flex items-center gap-2 px-3 py-2 hover:bg-primary/5">
+                      <SelectCheckbox
                         checked={selectedExistingVoterIds.includes(u._id)}
-                        onCheckedChange={(checked) =>
-                          setSelectedExistingVoterIds(prev => checked ? [...prev, u._id] : prev.filter(id => id !== u._id))
+                        onCheckedChange={() =>
+                          setSelectedExistingVoterIds(prev =>
+                            prev.includes(u._id) ? prev.filter(id => id !== u._id) : [...prev, u._id]
+                          )
                         }
+                        aria-label={`Select ${u.username}`}
                       />
                       <span className="text-sm font-mono">{u.username}</span>
-                    </label>
+                    </div>
                   ));
                 })()}
               </div>
@@ -766,7 +913,7 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
                     <SelectTrigger><SelectValue placeholder="Select election" /></SelectTrigger>
                     <SelectContent>
                       {displayElections.map(e => (
-                        <SelectItem key={getRecordId(e)} value={getRecordId(e)}>{e.title}</SelectItem>
+                        <SelectItem key={getRecordId(e)} value={getRecordId(e)}>{getElectionLabel(e)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -801,7 +948,7 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
                     <SelectTrigger><SelectValue placeholder="Select an election" /></SelectTrigger>
                     <SelectContent>
                       {formElections.map((election) => (
-                        <SelectItem key={getRecordId(election)} value={getRecordId(election)}>{election.title}</SelectItem>
+                        <SelectItem key={getRecordId(election)} value={getRecordId(election)}>{getElectionLabel(election)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -898,13 +1045,14 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
                   {displayElections.map((election) => {
                     const eid = getRecordId(election);
                     return (
-                      <label key={eid} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
-                        <Checkbox
+                      <div key={eid} className="flex items-center gap-2 px-3 py-2 hover:bg-primary/5">
+                        <SelectCheckbox
                           checked={editForm.electionIds.includes(eid)}
-                          onCheckedChange={(checked) => toggleEditElection(eid, checked === true)}
+                          onCheckedChange={() => toggleEditElection(eid, !editForm.electionIds.includes(eid))}
+                          aria-label={`Select ${getElectionLabel(election)}`}
                         />
-                        <span className="text-sm">{election.title} — {election.organization}</span>
-                      </label>
+                        <span className="text-sm">{getElectionLabel(election)}</span>
+                      </div>
                     );
                   })}
                 </div>
@@ -935,7 +1083,7 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-1">
-            <label className="flex flex-col items-center justify-center w-full min-h-28 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+            <label className="flex flex-col items-center justify-center w-full min-h-28 border-2 border-dashed rounded-lg cursor-pointer bg-white hover:bg-primary/10">
               <div className="flex flex-col items-center py-5">
                 <FileSpreadsheet className="h-8 w-8 text-gray-400 mb-2" />
                 <p className="text-sm text-gray-600">
@@ -964,7 +1112,7 @@ export default function Voters({ embedded = false, electionId }: { embedded?: bo
                     <SelectItem value="none">None — use elections column only</SelectItem>
                     {displayElections.map((election) => (
                       <SelectItem key={getRecordId(election)} value={getRecordId(election)}>
-                        {election.title} — {election.organization}
+                        {getElectionLabel(election)}
                       </SelectItem>
                     ))}
                   </SelectContent>

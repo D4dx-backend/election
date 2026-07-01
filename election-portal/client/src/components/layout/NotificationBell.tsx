@@ -123,7 +123,7 @@ export function NotificationBell() {
                       type="button"
                       onClick={() => handleClick(notification)}
                       className={cn(
-                        "w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors flex gap-3",
+                        "w-full text-left px-4 py-3 hover:bg-primary/5 transition-colors flex gap-3",
                         !read && "bg-primary/5"
                       )}
                     >

@@ -212,7 +212,7 @@ export default function Onboarding() {
       } else if (userRole === "franchise_admin") {
         navigate("/elections");
       } else if (userRole === "election_admin") {
-        navigate("/nominees");
+        navigate("/elections");
       } else {
         navigate("/");
       }
@@ -271,7 +271,7 @@ export default function Onboarding() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-white flex flex-col">
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
@@ -322,7 +322,7 @@ export default function Onboarding() {
                         className={`w-full flex items-center p-3 rounded-md text-left ${
                           index === currentStepIndex
                             ? "bg-primary/10 text-primary font-medium"
-                            : "text-gray-700 hover:bg-gray-50"
+                            : "text-gray-700 hover:bg-primary/5"
                         }`}
                         onClick={() => {
                           setCurrentStepIndex(index);
@@ -508,7 +508,7 @@ function SystemTourStep() {
 
         <TabsContent value="dashboard" className="space-y-4">
           <div className="rounded-lg border overflow-hidden">
-            <div className="bg-gray-50 p-4 border-b">
+            <div className="bg-white p-4 border-b">
               <h4 className="font-medium">Dashboard Overview</h4>
             </div>
             <div className="p-4">
@@ -522,7 +522,7 @@ function SystemTourStep() {
                 <li>System notifications and alerts</li>
               </ul>
 
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+              <div className="mt-4 p-4 bg-white rounded-lg">
                 <p className="text-sm font-medium">Pro Tip</p>
                 <p className="text-sm text-gray-600">
                   The dashboard is customized based on your role and permissions, showing only relevant information.
@@ -534,7 +534,7 @@ function SystemTourStep() {
 
         <TabsContent value="elections" className="space-y-4">
           <div className="rounded-lg border overflow-hidden">
-            <div className="bg-gray-50 p-4 border-b">
+            <div className="bg-white p-4 border-b">
               <h4 className="font-medium">Managing Elections</h4>
             </div>
             <div className="p-4">
@@ -549,7 +549,7 @@ function SystemTourStep() {
                 <li>Archive completed elections for future reference</li>
               </ul>
 
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+              <div className="mt-4 p-4 bg-white rounded-lg">
                 <p className="text-sm font-medium">Pro Tip</p>
                 <p className="text-sm text-gray-600">
                   Elections can be grouped for better organization, especially when managing multiple concurrent events.
@@ -561,7 +561,7 @@ function SystemTourStep() {
 
         <TabsContent value="users" className="space-y-4">
           <div className="rounded-lg border overflow-hidden">
-            <div className="bg-gray-50 p-4 border-b">
+            <div className="bg-white p-4 border-b">
               <h4 className="font-medium">User Management</h4>
             </div>
             <div className="p-4">
@@ -597,7 +597,7 @@ function SystemTourStep() {
                 <li>User activity logs and audit trails</li>
               </ul>
 
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+              <div className="mt-4 p-4 bg-white rounded-lg">
                 <p className="text-sm font-medium">Pro Tip</p>
                 <p className="text-sm text-gray-600">
                   Creating voter groups allows for bulk generation of voter accounts with sequential credentials.
@@ -746,7 +746,7 @@ function ElectionSetupStep() {
         <div className="rounded-lg border p-4">
           <h4 className="font-medium mb-2">Election Status Lifecycle</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
-            <div className="bg-gray-100 p-2 rounded text-center">
+            <div className="bg-white border p-2 rounded text-center">
               <span className="text-xs font-medium">Draft</span>
             </div>
             <div className="bg-green-100 p-2 rounded text-center">
@@ -951,7 +951,7 @@ function CompleteStep() {
             : "Election Administrator"}.
       </p>
 
-      <div className="rounded-lg border p-4 bg-gray-50 max-w-lg mx-auto mt-6 text-left">
+      <div className="rounded-lg border p-4 bg-white max-w-lg mx-auto mt-6 text-left">
         <h4 className="font-medium mb-2">Next Steps</h4>
         <ul className="list-disc list-inside text-sm text-gray-600 space-y-2">
           {userRole === "super_admin" && (

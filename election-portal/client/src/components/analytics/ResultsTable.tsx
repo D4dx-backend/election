@@ -84,17 +84,17 @@ export function ResultsTable({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="bg-gray-50">Rank</TableHead>
-                <TableHead className="bg-gray-50">Nominee</TableHead>
-                <TableHead className="bg-gray-50 text-right">Votes</TableHead>
-                <TableHead className="bg-gray-50 text-right">Percentage</TableHead>
+                <TableHead className="bg-white">Rank</TableHead>
+                <TableHead className="bg-white">Nominee</TableHead>
+                <TableHead className="bg-white text-right">Votes</TableHead>
+                <TableHead className="bg-white text-right">Percentage</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedNominees.map((nominee, index) => (
                 <TableRow 
                   key={nominee.id} 
-                  className={`transition-colors hover:bg-gray-50 ${index < numberToBeElected ? 'bg-green-50' : ''}`}
+                  className={`transition-colors hover:bg-primary/5 ${index < numberToBeElected ? 'bg-green-50' : ''}`}
                 >
                   <TableCell className="text-sm text-gray-500">
                     {index + 1}

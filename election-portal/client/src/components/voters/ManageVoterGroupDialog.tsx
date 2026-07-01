@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Dialog,
@@ -16,11 +16,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DeleteModeBar } from "@/components/ui/delete-mode-bar";
+import { DeleteModeButton } from "@/components/ui/delete-mode-button";
+import { RowSelectCheckbox } from "@/components/ui/row-select-checkbox";
+import { useBulkDeleteMode } from "@/hooks/useBulkDeleteMode";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
-  Search,
   UserPlus,
-  UserCheck,
   Users,
   Trash2,
   UsersRound,
@@ -49,7 +52,7 @@ export function ManageVoterGroupDialog({
 }: ManageVoterGroupDialogProps) {
   const { toast } = useToast();
   const [mainTab, setMainTab] = useState<"voters" | "add">("voters");
-  const [addTab, setAddTab] = useState<"new" | "existing" | "bulk">("new");
+  const [addTab, setAddTab] = useState<"new" | "bulk">("new");
 
   // New voter form
   const [newVoter, setNewVoter] = useState({
@@ -58,10 +61,6 @@ export function ManageVoterGroupDialog({
     password: "",
     registrationNumber: "",
   });
-
-  // Add-existing state
-  const [existingSearch, setExistingSearch] = useState("");
-  const [selectedVoterIds, setSelectedVoterIds] = useState<string[]>([]);
 
   // Bulk generate form
   const [bulkForm, setBulkForm] = useState({
@@ -72,6 +71,7 @@ export function ManageVoterGroupDialog({
 
   // Track per-voter remove loading
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [pendingRemoveIds, setPendingRemoveIds] = useState<string[] | null>(null);
 
   // ── Fetch full group detail (populated voters) ──────────────────────────
   const {
@@ -89,68 +89,7 @@ export function ManageVoterGroupDialog({
 
   const currentVoters: any[] = groupDetail?.data?.voters || [];
 
-  // ── Fetch voters NOT yet in this group ──────────────────────────────────
-  const { data: availableVotersResponse, isLoading: availableLoading, refetch: refetchAvailableVoters } =
-    useQuery({
-      queryKey: [
-        "/api/users/voters/not-in-group",
-        group?._id,
-        existingSearch,
-      ],
-      queryFn: async () => {
-        const params = new URLSearchParams({
-          notInGroup: group!._id,
-          pageSize: "200",
-          page: "1",
-        });
-        if (existingSearch.trim()) params.append("search", existingSearch.trim());
-        const res = await apiRequest(
-          "GET",
-          `/api/users/voters?${params}`
-        );
-        return res.json();
-      },
-      enabled:
-        !!group && open && mainTab === "add" && addTab === "existing",
-      staleTime: 0,
-    });
-
-  const groupMemberIds = useMemo(
-    () => new Set(currentVoters.map((v: any) => v._id?.toString() || "")),
-    [currentVoters]
-  );
-
-  const availableVoters: any[] = (availableVotersResponse?.data || []).filter(
-    (v: any) => !groupMemberIds.has(v._id?.toString() || "")
-  );
-
   // ── Mutations ────────────────────────────────────────────────────────────
-  const addExistingMutation = useMutation({
-    mutationFn: async (voterIds: string[]) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/voter-groups/${group!._id}/add-voters`,
-        { voterIds }
-      );
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Voters added to group", variant: "success" });
-      setSelectedVoterIds([]);
-      queryClient.invalidateQueries({ queryKey: ["/api/voter-groups"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/users/voters/not-in-group"] });
-      refetchGroupDetail();
-      refetchAvailableVoters();
-    },
-    onError: (err: Error) => {
-      toast({
-        title: "Failed to add voters",
-        description: err.message,
-        variant: "destructive",
-      });
-    },
-  });
-
   const createNewMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/users/voters", {
@@ -215,57 +154,56 @@ export function ManageVoterGroupDialog({
     },
   });
 
-  const removeVoterMutation = useMutation({
-    mutationFn: async (voterId: string) => {
-      setRemovingIds((prev) => new Set([...prev, voterId]));
+  const currentVoterIds = currentVoters
+    .map((v: { _id?: string }) => v._id?.toString() || "")
+    .filter(Boolean);
+  const voterSelection = useBulkDeleteMode(currentVoterIds);
+
+  const removeVotersMutation = useMutation({
+    mutationFn: async (voterIds: string[]) => {
+      setRemovingIds((prev) => new Set([...prev, ...voterIds]));
       const res = await apiRequest(
         "POST",
         `/api/voter-groups/${group!._id}/remove-voters`,
-        { voterIds: [voterId] }
+        { voterIds }
       );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || "Failed to remove voters");
+      }
       return res.json();
     },
-    onSuccess: (_data, voterId) => {
-      toast({ title: "Voter removed from group", variant: "success" });
-      setRemovingIds((prev) => {
-        const s = new Set(prev);
-        s.delete(voterId);
-        return s;
+    onSuccess: (_data, voterIds) => {
+      toast({
+        title: voterIds.length === 1 ? "Voter removed from group" : "Voters removed from group",
+        description:
+          voterIds.length === 1
+            ? "The voter was removed from this group."
+            : `${voterIds.length} voters were removed from this group.`,
+        variant: "success",
       });
+      setPendingRemoveIds(null);
+      voterSelection.exitDeleteMode();
+      setRemovingIds(new Set());
       queryClient.invalidateQueries({ queryKey: ["/api/voter-groups"] });
       refetchGroupDetail();
     },
-    onError: (err: Error, voterId) => {
+    onError: (err: Error, voterIds) => {
       setRemovingIds((prev) => {
         const s = new Set(prev);
-        s.delete(voterId);
+        voterIds.forEach((id) => s.delete(id));
         return s;
       });
       toast({
-        title: "Failed to remove voter",
+        title: "Failed to remove voter(s)",
         description: err.message,
         variant: "destructive",
       });
+      setPendingRemoveIds(null);
     },
   });
 
   // ── Handlers ─────────────────────────────────────────────────────────────
-  const toggleVoterSelection = (id: string) => {
-    setSelectedVoterIds((prev) =>
-      prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]
-    );
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedVoterIds.length === availableVoters.length) {
-      setSelectedVoterIds([]);
-    } else {
-      setSelectedVoterIds(
-        availableVoters.map((v: any) => v._id?.toString() || "").filter(Boolean)
-      );
-    }
-  };
-
   const handleCreateNew = () => {
     if (!newVoter.username.trim()) {
       toast({ title: "Username is required", variant: "destructive" });
@@ -299,8 +237,6 @@ export function ManageVoterGroupDialog({
       setMainTab("voters");
       setAddTab("new");
       setNewVoter({ fullName: "", username: "", password: "", registrationNumber: "" });
-      setExistingSearch("");
-      setSelectedVoterIds([]);
     }
     onOpenChange(o);
   };
@@ -360,7 +296,30 @@ export function ManageVoterGroupDialog({
                 tab to add some.
               </div>
             ) : (
-              <ScrollArea className="h-80 rounded-md border">
+              <div className="space-y-3">
+                <div className="flex items-center justify-end">
+                  <DeleteModeButton
+                    active={voterSelection.deleteMode}
+                    onClick={() =>
+                      voterSelection.deleteMode
+                        ? voterSelection.exitDeleteMode()
+                        : voterSelection.enterDeleteMode()
+                    }
+                    compact
+                  />
+                </div>
+                <DeleteModeBar
+                  active={voterSelection.deleteMode}
+                  count={voterSelection.selectedCount}
+                  entityLabel="voter"
+                  onCancel={voterSelection.exitDeleteMode}
+                  onConfirmDelete={() =>
+                    voterSelection.selectedCount > 0 &&
+                    setPendingRemoveIds([...voterSelection.selectedIds])
+                  }
+                  deleting={removeVotersMutation.isPending}
+                />
+                <ScrollArea className="h-80 rounded-md border">
                 <div className="divide-y">
                   {currentVoters.map((voter: any) => {
                     const id = voter._id?.toString() || "";
@@ -370,7 +329,14 @@ export function ManageVoterGroupDialog({
                         key={id}
                         className="flex items-center justify-between gap-3 px-3 py-2.5"
                       >
-                        <div className="flex items-center gap-3 min-w-0">
+                        {voterSelection.showSelectors && (
+                        <RowSelectCheckbox
+                          checked={voterSelection.isSelected(id)}
+                          onCheckedChange={() => voterSelection.toggle(id)}
+                          aria-label={`Select ${voter.username}`}
+                        />
+                        )}
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary uppercase">
                             {(voter.username || "?").slice(0, 2)}
                           </div>
@@ -386,12 +352,13 @@ export function ManageVoterGroupDialog({
                               )}
                           </div>
                         </div>
+                        {!voterSelection.deleteMode && (
                         <Button
                           variant="ghost"
                           size="sm"
                           className="text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0"
-                          onClick={() => removeVoterMutation.mutate(id)}
-                          disabled={isRemoving}
+                          onClick={() => setPendingRemoveIds([id])}
+                          disabled={isRemoving || removeVotersMutation.isPending}
                         >
                           {isRemoving ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -399,11 +366,13 @@ export function ManageVoterGroupDialog({
                             <Trash2 className="h-3.5 w-3.5" />
                           )}
                         </Button>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               </ScrollArea>
+              </div>
             )}
           </TabsContent>
 
@@ -411,22 +380,12 @@ export function ManageVoterGroupDialog({
           <TabsContent value="add" className="mt-4 flex-1 min-h-0">
             <Tabs
               value={addTab}
-              onValueChange={(v) => {
-                setAddTab(v as "new" | "existing" | "bulk");
-                setSelectedVoterIds([]);
-              }}
+              onValueChange={(v) => setAddTab(v as "new" | "bulk")}
             >
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="new" className="gap-1 text-xs sm:text-sm">
                   <UserPlus className="h-3.5 w-3.5" />
                   <span>New Voter</span>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="existing"
-                  className="gap-1 text-xs sm:text-sm"
-                >
-                  <UserCheck className="h-3.5 w-3.5" />
-                  <span>Existing</span>
                 </TabsTrigger>
                 <TabsTrigger value="bulk" className="gap-1 text-xs sm:text-sm">
                   <UsersRound className="h-3.5 w-3.5" />
@@ -496,106 +455,6 @@ export function ManageVoterGroupDialog({
                       : "Create & Add to Group"}
                   </Button>
                 </div>
-              </TabsContent>
-
-              {/* Add Existing Voters */}
-              <TabsContent value="existing" className="mt-4 space-y-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    placeholder="Search by username or name…"
-                    value={existingSearch}
-                    onChange={(e) => setExistingSearch(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-
-                {availableLoading ? (
-                  <Skeleton className="h-48 w-full" />
-                ) : availableVoters.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-gray-500">
-                    {existingSearch
-                      ? "No matching voters found."
-                      : "All existing voters are already in this group."}
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                      <Checkbox
-                        id="mg-select-all"
-                        checked={
-                          availableVoters.length > 0 &&
-                          selectedVoterIds.length === availableVoters.length
-                        }
-                        onCheckedChange={toggleSelectAll}
-                      />
-                      <Label
-                        htmlFor="mg-select-all"
-                        className="cursor-pointer font-normal"
-                      >
-                        {selectedVoterIds.length > 0
-                          ? `${selectedVoterIds.length} of ${availableVoters.length} selected`
-                          : `Select all (${availableVoters.length})`}
-                      </Label>
-                    </div>
-
-                    <ScrollArea className="h-48 rounded-md border">
-                      <div className="divide-y">
-                        {availableVoters.map((voter: any) => {
-                          const id = voter._id?.toString() || "";
-                          const checked = selectedVoterIds.includes(id);
-                          return (
-                            <label
-                              key={id}
-                              htmlFor={`mg-ev-${id}`}
-                              className={`flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-gray-50 ${
-                                checked ? "bg-primary/5" : ""
-                              }`}
-                            >
-                              <Checkbox
-                                id={`mg-ev-${id}`}
-                                checked={checked}
-                                onCheckedChange={() =>
-                                  toggleVoterSelection(id)
-                                }
-                              />
-                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary uppercase">
-                                {(voter.username || "?").slice(0, 2)}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium">
-                                  {voter.username}
-                                </p>
-                                {voter.fullName &&
-                                  voter.fullName !== voter.username && (
-                                    <p className="truncate text-xs text-gray-500">
-                                      {voter.fullName}
-                                    </p>
-                                  )}
-                              </div>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </ScrollArea>
-
-                    <div className="flex justify-end">
-                      <Button
-                        onClick={() =>
-                          addExistingMutation.mutate(selectedVoterIds)
-                        }
-                        disabled={
-                          selectedVoterIds.length === 0 ||
-                          addExistingMutation.isPending
-                        }
-                      >
-                        {addExistingMutation.isPending
-                          ? "Adding…"
-                          : `Add${selectedVoterIds.length > 0 ? ` (${selectedVoterIds.length})` : ""} to Group`}
-                      </Button>
-                    </div>
-                  </>
-                )}
               </TabsContent>
 
               {/* Bulk Generate */}
@@ -678,6 +537,26 @@ export function ManageVoterGroupDialog({
           </TabsContent>
         </Tabs>
       </DialogContent>
+
+      <ConfirmDialog
+        open={!!pendingRemoveIds?.length}
+        onOpenChange={(open) => !open && setPendingRemoveIds(null)}
+        onConfirm={() =>
+          pendingRemoveIds?.length && removeVotersMutation.mutate(pendingRemoveIds)
+        }
+        loading={removeVotersMutation.isPending}
+        title="Are you sure?"
+        description={
+          pendingRemoveIds && pendingRemoveIds.length > 1
+            ? `This will remove ${pendingRemoveIds.length} voters from this group. Their accounts will not be deleted.`
+            : "This will remove the voter from this group. Their account will not be deleted."
+        }
+        confirmText={
+          pendingRemoveIds && pendingRemoveIds.length > 1
+            ? `Remove ${pendingRemoveIds.length} voters`
+            : "Remove voter"
+        }
+      />
     </Dialog>
   );
 }

@@ -48,7 +48,7 @@ export interface Franchise extends ApiEntity {
 export interface Election extends ApiEntity {
   franchiseId: EntityId;
   organization: string;
-  title: string;
+  title?: string;
   electionDate: string | Date;
   numberToBeElected: number;
   nomineeDisplayOrder?: string | null;
@@ -62,13 +62,15 @@ export interface Election extends ApiEntity {
   resultsPublished?: boolean | null;
   resultsPublishedAt?: string | Date | null;
   voterResultDisplay?: string | null;
+  adminVotingDetailsEnabled?: boolean | null;
+  manualWinnerSelection?: boolean | null;
+  manualWinnerIds?: EntityId[] | null;
   createdBy?: EntityId | null;
   createdAt?: string | Date | null;
   updatedAt?: string | Date | null;
   status?: string | null;
   logoUrl?: string | null;
   logoAlt?: string | null;
-  electionGroupId?: EntityId | null;
   logo?: { url?: string; alt?: string };
 }
 
@@ -131,7 +133,6 @@ export interface ElectionAnalytic extends ApiEntity {
 export const insertElectionSchema = z.object({
   franchiseId: z.string().uuid().optional(),
   organization: z.string().min(1, "Organization is required"),
-  title: z.string().min(1, "Title is required"),
   electionDate: z.union([z.string(), z.date()]),
   numberToBeElected: z.number().int().min(1),
   nomineeDisplayOrder: z.string().optional(),
@@ -143,8 +144,9 @@ export const insertElectionSchema = z.object({
   selfRegOpen: z.boolean().optional(),
   votingOpen: z.boolean().optional(),
   resultsPublished: z.boolean().optional(),
+  adminVotingDetailsEnabled: z.boolean().optional(),
+  manualWinnerSelection: z.boolean().optional(),
   voterResultDisplay: z.string().optional(),
-  electionGroupId: z.string().uuid().optional(),
   status: z.string().optional(),
   logoUrl: z.string().optional(),
   logoAlt: z.string().optional(),

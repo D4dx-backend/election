@@ -1,6 +1,7 @@
 const { getSupabase } = require("../../config/supabase");
 const { mapVote } = require("./map");
 const { isUuid } = require("./users");
+const { resolvePublicImageUrl } = require("../spacesStorage");
 
 async function loadNomineeIds(voteIds) {
   const map = new Map();
@@ -40,7 +41,9 @@ async function mapVotes(rows, { populateNominees = false } = {}) {
           _id: n.id,
           id: n.id,
           name: n.name,
-          photo: n.photo_url ? { url: n.photo_url, alt: n.photo_alt } : undefined,
+          photo: n.photo_url
+            ? { url: resolvePublicImageUrl(n.photo_url), alt: n.photo_alt }
+            : undefined,
         };
       });
     }
@@ -188,6 +191,44 @@ async function countDocuments(filter = {}) {
   return count || 0;
 }
 
+async function findByElection(electionId, { populateNominees = true, populateVoters = true } = {}) {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("votes")
+    .select("*")
+    .eq("election_id", electionId)
+    .order("voted_at", { ascending: false });
+  if (error) throw error;
+
+  const mapped = await mapVotes(data || [], { populateNominees });
+  if (!populateVoters || !mapped.length) return mapped;
+
+  const voterIds = [...new Set(mapped.map((v) => v.voterId).filter(Boolean))];
+  if (!voterIds.length) return mapped;
+
+  const { data: usersData, error: uErr } = await supabase
+    .from("users")
+    .select("id, username, full_name, registration_number")
+    .in("id", voterIds);
+  if (uErr) throw uErr;
+
+  const userMap = {};
+  (usersData || []).forEach((u) => {
+    userMap[u.id] = {
+      _id: u.id,
+      id: u.id,
+      username: u.username,
+      fullName: u.full_name,
+      registrationNumber: u.registration_number,
+    };
+  });
+
+  mapped.forEach((vote) => {
+    vote.voter = userMap[vote.voterId] || null;
+  });
+  return mapped;
+}
+
 async function getTallyForElection(electionId) {
   const supabase = getSupabase();
   const { data: votes, error: vErr } = await supabase
@@ -218,6 +259,7 @@ module.exports = {
   findById,
   findOne,
   findByVoter,
+  findByElection,
   findAll,
   updateById,
   deleteById,

@@ -19,7 +19,7 @@ export interface ElectionWithDetails extends ApiEntityFormat {
   nominees?: Nominee[];
   voters?: User[];
   analytics?: ElectionAnalytic;
-  title: string;
+  title?: string;
   organization: string;
   electionDate: string | Date;
   numberToBeElected: number;
@@ -37,7 +37,6 @@ export interface ElectionWithDetails extends ApiEntityFormat {
   resultsPublishedAt?: string | Date | null;
   voterResultDisplay?: "result_only" | "percentage" | "score" | "full";
   nomineeDisplayOrder?: string;
-  electionGroupId?: string;
   createdBy?: string;
   createdAt?: string | Date;
   updatedAt?: string | Date;
@@ -96,12 +95,11 @@ export interface VoterFilter {
 
 export interface BulkVoterGenerationOptions {
   prefix: string;
+  shuffledPrefix?: string;
   startingNumber: number;
   count: number;
   electionIds?: string[];
-  electionGroupId?: string;
-  voterGroupId?: string;
-  assignmentType: "election" | "electionGroup" | "voterGroup";
+  assignmentType: "election" | "voterGroup";
 }
 
 export type ElectionStatus = "draft" | "active" | "completed" | "archived";

@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const users = require("../lib/supabase/users");
+const roles = require("../lib/roles");
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "24h" });
@@ -12,7 +13,8 @@ function stripUser(user) {
 
 exports.login = async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const username = roles.normalizeUsername(req.body.username);
+    const password = String(req.body.password || "");
 
     if (!username || !password) {
       return res.status(400).json({ success: false, message: "Please provide username and password" });

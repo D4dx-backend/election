@@ -1,6 +1,7 @@
-import { Checkbox } from "@/components/ui/checkbox";
+import { SelectCheckbox } from "@/components/ui/row-select-checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { normalizeEntityId } from "@/lib/apiHelpers";
+import { getElectionLabel, getElectionSubtitle } from "@/lib/electionHelpers";
 
 export interface ElectionPickerOption {
   _id?: string;
@@ -40,22 +41,24 @@ export function ElectionMultiPicker({
         {elections.map((e) => {
           const id = normalizeEntityId(e._id ?? e.id);
           if (!id) return null;
+          const subtitle = getElectionSubtitle(e);
           return (
-            <label
+            <div
               key={id}
-              className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2.5 hover:bg-gray-50"
+              className="flex items-center gap-2 rounded-md px-2 py-2.5 hover:bg-primary/5"
             >
-              <Checkbox
+              <SelectCheckbox
                 checked={selectedIds.includes(id)}
                 onCheckedChange={() => toggle(id)}
+                aria-label={`Select ${getElectionLabel(e)}`}
               />
-              <span className="min-w-0 text-sm">
-                <span className="font-medium text-gray-900">{e.title || "Untitled"}</span>
-                {e.organization ? (
-                  <span className="text-gray-500"> — {e.organization}</span>
+              <div className="min-w-0 text-sm">
+                <span className="font-medium text-gray-900">{getElectionLabel(e)}</span>
+                {subtitle ? (
+                  <span className="ml-1 text-xs text-gray-500">({subtitle})</span>
                 ) : null}
-              </span>
-            </label>
+              </div>
+            </div>
           );
         })}
       </div>

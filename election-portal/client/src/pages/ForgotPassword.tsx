@@ -69,7 +69,7 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
+    <div className="min-h-screen flex flex-col bg-white dark:bg-gray-900">
       <div className="flex-1 flex flex-col justify-center px-5 max-w-sm mx-auto w-full py-10">
         <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-700 p-6">
           <Link href="/login">

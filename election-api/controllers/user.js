@@ -3,6 +3,7 @@ const voterGroups = require("../lib/supabase/voterGroups");
 const bcrypt = require("bcryptjs");
 const { logUserActivity } = require("../utils/auditLog");
 const roles = require("../lib/roles");
+const { resolveShuffledPrefix } = require("../lib/prefixShuffle");
 
 const generatePassword = () => {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -196,7 +197,24 @@ exports.getFranchiseAdmins = async (req, res) => {
       filter.franchiseId = req.query.franchiseId;
     }
 
-    const data = (await users.findAll(filter)).map(users.stripPassword);
+    if (req.query.page !== undefined) {
+      const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+      const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
+      const { users: franchiseAdmins, total } = await users.findPaginated(filter, { page, limit });
+      const withFranchises = await users.attachFranchiseDetails(franchiseAdmins);
+      const data = withFranchises.map(users.stripPassword);
+      const totalPages = Math.max(Math.ceil(total / limit), 1);
+      return res.status(200).json({
+        success: true,
+        count: data.length,
+        pagination: { total, page, pageSize: limit, totalPages },
+        data,
+      });
+    }
+
+    const franchiseAdmins = await users.findAll(filter);
+    const withFranchises = await users.attachFranchiseDetails(franchiseAdmins);
+    const data = withFranchises.map(users.stripPassword);
     res.status(200).json({ success: true, count: data.length, data });
   } catch (err) {
     sendError(res, err);
@@ -219,7 +237,24 @@ exports.getElectionAdmins = async (req, res) => {
       filter.franchiseId = req.query.franchiseId;
     }
 
-    const data = (await users.findAll(filter)).map(users.stripPassword);
+    if (req.query.page !== undefined) {
+      const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+      const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
+      const { users: electionAdmins, total } = await users.findPaginated(filter, { page, limit });
+      const withFranchises = await users.attachFranchiseDetails(electionAdmins);
+      const data = withFranchises.map(users.stripPassword);
+      const totalPages = Math.max(Math.ceil(total / limit), 1);
+      return res.status(200).json({
+        success: true,
+        count: data.length,
+        pagination: { total, page, pageSize: limit, totalPages },
+        data,
+      });
+    }
+
+    const electionAdmins = await users.findAll(filter);
+    const withFranchises = await users.attachFranchiseDetails(electionAdmins);
+    const data = withFranchises.map(users.stripPassword);
     res.status(200).json({ success: true, count: data.length, data });
   } catch (err) {
     sendError(res, err);
@@ -326,10 +361,13 @@ exports.generateVoters = async (req, res) => {
   try {
     roles.assertCanAssignRole(req.user, "voter");
 
-    const { prefix, startingNumber, count, electionIds, voterGroupId, assignmentType } = req.body;
+    const { prefix, startingNumber, count, electionIds, voterGroupId, assignmentType, shuffledPrefix: clientShuffled } = req.body;
 
-    if (!prefix || typeof prefix !== "string") {
-      return res.status(400).json({ success: false, message: "prefix is required." });
+    let shuffledPrefix;
+    try {
+      shuffledPrefix = resolveShuffledPrefix(null, clientShuffled || prefix);
+    } catch (err) {
+      return sendError(res, err);
     }
     const start = parseInt(startingNumber, 10);
     const num = parseInt(count, 10);
@@ -344,7 +382,7 @@ exports.generateVoters = async (req, res) => {
       assignmentType === "election" && Array.isArray(electionIds) ? electionIds : [];
 
     const usernames = [];
-    for (let i = 0; i < num; i++) usernames.push(`${prefix}${start + i}`);
+    for (let i = 0; i < num; i++) usernames.push(`${shuffledPrefix}${start + i}`);
 
     const existing = await users.findByUsernames(usernames);
     const existingLower = new Set(existing.map((u) => u.username.toLowerCase()));
@@ -354,7 +392,7 @@ exports.generateVoters = async (req, res) => {
     const docs = [];
     for (let i = 0; i < num; i++) {
       const seq = start + i;
-      const username = `${prefix}${seq}`;
+      const username = `${shuffledPrefix}${seq}`;
       if (existingLower.has(username.toLowerCase())) continue;
       const plainPassword = generatePassword();
       const hashedPassword = await bcrypt.hash(plainPassword, 10);
@@ -370,7 +408,7 @@ exports.generateVoters = async (req, res) => {
         franchiseId,
         electionAccess,
         voterMetadata: {
-          prefix,
+          prefix: shuffledPrefix,
           sequenceNumber: seq,
         },
       });

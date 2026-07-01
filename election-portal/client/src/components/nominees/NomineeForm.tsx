@@ -3,8 +3,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Election } from '@/lib/types';
+import { getElectionLabel } from '@/lib/electionHelpers';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, apiFormRequest } from '@/lib/queryClient';
+import { prepareImageForUpload, validateImageFile, fileToDataUrl } from '@/lib/imageUpload';
+import { hasNomineePhoto } from '@/lib/nomineeHelpers';
 
 import {
   Form,
@@ -34,6 +37,7 @@ const singleNomineeSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters' }),
   electionId: z.string().min(1, { message: 'Please select an election' }),
   gender: z.enum(['male', 'female']).optional(),
+  description: z.string().max(2000).optional(),
 });
 
 // Form schema for bulk nominees
@@ -56,16 +60,36 @@ type BulkNomineeFormValues = {
 type ImportPreviousFormValues = z.infer<typeof importPreviousSchema>;
 
 interface NomineeFormProps {
-  onSuccess: () => void;
   elections: Election[];
   initialData?: any;
   isEdit?: boolean;
+  /** When opened from an election workspace, lock the target election. */
+  defaultElectionId?: string;
+  onSuccess?: (result?: { electionId: string; nominee?: Record<string, unknown> }) => void;
 }
 
-export function NomineeForm({ onSuccess, elections, initialData, isEdit = false }: NomineeFormProps) {
+export function NomineeForm({
+  onSuccess,
+  elections,
+  initialData,
+  isEdit = false,
+  defaultElectionId,
+}: NomineeFormProps) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<string>(isEdit ? 'single' : 'single');
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(
+    initialData?.photo?.url || initialData?.photoUrl || null
+  );
+
+  useEffect(() => {
+    return () => {
+      if (photoPreview?.startsWith('blob:')) {
+        URL.revokeObjectURL(photoPreview);
+      }
+    };
+  }, [photoPreview]);
 
   // Resolve whether a given election uses gender-based selection.
   const isGenderBased = (electionId?: string) => {
@@ -81,8 +105,13 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
     resolver: zodResolver(singleNomineeSchema),
     defaultValues: {
       name: initialData?.name || '',
-      electionId: initialData?.electionId || '',
+      electionId:
+        initialData?.electionId?._id?.toString() ||
+        initialData?.electionId?.toString() ||
+        defaultElectionId ||
+        '',
       gender: initialData?.gender || 'male',
+      description: initialData?.description || initialData?.bio || '',
     },
   });
 
@@ -91,7 +120,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
     resolver: zodResolver(bulkNomineeSchema),
     defaultValues: {
       namesWithGender: '',
-      electionId: '',
+      electionId: defaultElectionId || '',
     },
   });
 
@@ -100,9 +129,39 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
     resolver: zodResolver(importPreviousSchema),
     defaultValues: {
       sourceElectionId: '',
-      targetElectionId: '',
+      targetElectionId: defaultElectionId || '',
     },
   });
+
+  const resolveElectionId = (election: Election) =>
+    election._id?.toString() || (election as { id?: string | number }).id?.toString() || '';
+
+  // Pre-select election when adding from a specific election context.
+  useEffect(() => {
+    if (isEdit) return;
+
+    const soleElectionId =
+      elections.length === 1 ? resolveElectionId(elections[0]) : '';
+    const targetElectionId = defaultElectionId || soleElectionId;
+    if (!targetElectionId) return;
+
+    if (!singleForm.getValues('electionId')) {
+      singleForm.setValue('electionId', targetElectionId, { shouldValidate: true });
+    }
+    if (!bulkForm.getValues('electionId')) {
+      bulkForm.setValue('electionId', targetElectionId, { shouldValidate: true });
+    }
+    if (!importPreviousForm.getValues('targetElectionId')) {
+      importPreviousForm.setValue('targetElectionId', targetElectionId, { shouldValidate: true });
+    }
+  }, [
+    isEdit,
+    defaultElectionId,
+    elections,
+    singleForm,
+    bulkForm,
+    importPreviousForm,
+  ]);
 
   // File import handler
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,52 +171,237 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
     }
   };
 
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const validationError = validateImageFile(file);
+    if (validationError) {
+      toast({
+        title: 'Invalid file',
+        description: validationError,
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (photoPreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(photoPreview);
+    }
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const clearPhotoSelection = () => {
+    if (photoPreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(photoPreview);
+    }
+    setPhotoFile(null);
+    setPhotoPreview(null);
+  };
+
+  const renderOptionalDetailsFields = (form: typeof singleForm) => (
+    <>
+      <FormField
+        control={form.control}
+        name="description"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>
+              Description{' '}
+              <span className="text-gray-400 font-normal text-xs">(optional)</span>
+            </FormLabel>
+            <FormControl>
+              <Textarea
+                placeholder="Short bio or platform summary for voters"
+                className="min-h-[88px] resize-y"
+                {...field}
+              />
+            </FormControl>
+            <FormDescription>Shown on the ballot when provided.</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormItem>
+        <FormLabel>
+          Image{' '}
+          <span className="text-gray-400 font-normal text-xs">(optional)</span>
+        </FormLabel>
+        <div className="space-y-3">
+          {photoPreview && (
+            <div className="flex items-center gap-3">
+              <img
+                src={photoPreview}
+                alt="Nominee preview"
+                className="h-16 w-16 rounded-full object-cover border border-gray-200"
+              />
+              <Button type="button" variant="outline" size="sm" onClick={clearPhotoSelection}>
+                Remove image
+              </Button>
+            </div>
+          )}
+          <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-200 bg-white px-4 py-6 hover:bg-primary/5">
+            <Upload className="mb-2 h-5 w-5 text-gray-400" />
+            <span className="text-sm font-medium text-gray-700">
+              {photoPreview ? 'Replace image' : 'Upload image'}
+            </span>
+            <span className="mt-1 text-xs text-gray-500">PNG, JPG up to 5MB</span>
+            <input
+              type="file"
+              className="hidden"
+              accept="image/*"
+              onChange={handlePhotoChange}
+            />
+          </label>
+        </div>
+      </FormItem>
+    </>
+  );
+
   // Single nominee submission handler
   const onSubmitSingle = async (data: SingleNomineeFormValues) => {
     try {
-      if (isEdit && initialData) {
-        // Update existing nominee
-        await apiRequest(
-          'PATCH',
-          `/api/nominees/${initialData._id || initialData.id}`,
-          {
-            name: data.name,
-            electionId: data.electionId,
-            gender: data.gender, // Include gender field
-          }
-        );
+      const nomineeId = initialData?._id || initialData?.id;
+      const resolvedElectionId = (defaultElectionId || data.electionId || "").trim();
+      if (!resolvedElectionId) {
+        toast({
+          title: "Election required",
+          description: "Select an election before creating a nominee.",
+          variant: "destructive",
+        });
+        return;
+      }
 
+      const descriptionValue = data.description?.trim() || '';
+      let createdNominee: Record<string, unknown> | undefined;
+      let photoUploadFailed = false;
+
+      const jsonBody: Record<string, unknown> = {
+        name: data.name,
+        electionId: resolvedElectionId,
+        gender: data.gender,
+      };
+      if (descriptionValue || isEdit) {
+        jsonBody.description = descriptionValue || null;
+      }
+
+      const uploadPhotoForNominee = async (targetId: string) => {
+        if (!photoFile) return undefined;
+        const uploadFile = await prepareImageForUpload(photoFile);
+
+        const readNominee = (body: Record<string, unknown>) =>
+          (body.data || body.nominee) as Record<string, unknown> | undefined;
+
+        const dataUrl = await fileToDataUrl(photoFile);
+
+        // Multipart keeps binary size (no base64 bloat) — works through 1MB gateways.
+        try {
+          const formData = new FormData();
+          formData.append('name', data.name);
+          formData.append('electionId', resolvedElectionId);
+          if (data.gender) formData.append('gender', data.gender);
+          if (descriptionValue) formData.append('description', descriptionValue);
+          formData.append('photo', uploadFile, uploadFile.name);
+
+          const res = await apiFormRequest('PUT', `/api/nominees/${targetId}`, formData);
+          const updated = readNominee(await res.json());
+          if (hasNomineePhoto(updated)) return updated;
+        } catch {
+          // Fall through to JSON photo upload.
+        }
+
+        // Compact data URL in JSON — works on Mongo production APIs (no multer required).
+        try {
+          const res = await apiRequest('PUT', `/api/nominees/${targetId}`, {
+            name: data.name,
+            electionId: resolvedElectionId,
+            photo: { url: dataUrl, alt: data.name },
+          });
+          const updated = readNominee(await res.json());
+          if (hasNomineePhoto(updated)) return updated;
+        } catch {
+          // Fall through to CDN base64 upload on newer APIs.
+        }
+
+        const res = await apiRequest('PUT', `/api/nominees/${targetId}`, {
+          photoBase64: dataUrl,
+        });
+        const updated = readNominee(await res.json());
+        if (!hasNomineePhoto(updated)) {
+          throw new Error('Photo was not saved on the server');
+        }
+        return updated;
+      };
+
+      if (isEdit && nomineeId) {
+        const res = await apiRequest('PUT', `/api/nominees/${nomineeId}`, jsonBody);
+        const responseBody = await res.json();
+        createdNominee = responseBody.data || responseBody.nominee;
+
+        if (photoFile) {
+          try {
+            const withPhoto = await uploadPhotoForNominee(String(nomineeId));
+            if (withPhoto) createdNominee = withPhoto;
+          } catch {
+            photoUploadFailed = true;
+          }
+        }
+      } else {
+        // Create nominee first with a small JSON body (avoids HTTP 413).
+        const res = await apiRequest('POST', '/api/nominees', jsonBody);
+        const responseBody = await res.json();
+        createdNominee = responseBody.nominee || responseBody.data;
+
+        const newId = createdNominee?._id || createdNominee?.id;
+        if (photoFile && newId) {
+          try {
+            const withPhoto = await uploadPhotoForNominee(String(newId));
+            if (withPhoto) createdNominee = withPhoto;
+          } catch {
+            photoUploadFailed = true;
+          }
+        }
+      }
+
+      if (photoFile && !hasNomineePhoto(createdNominee)) {
+        photoUploadFailed = true;
+      }
+
+      if (isEdit) {
         toast({
           title: 'Nominee updated',
-          description: 'The nominee has been updated successfully',
-          variant: 'success'
+          description: photoUploadFailed
+            ? 'Details saved, but the photo could not be uploaded. Try again or redeploy the API with image upload support.'
+            : 'The nominee has been updated successfully',
+          variant: photoUploadFailed ? 'destructive' : 'success',
         });
       } else {
-        // Create new nominee
-        await apiRequest(
-          'POST',
-          '/api/nominees',
-          {
-            name: data.name,
-            electionId: data.electionId,
-            gender: data.gender, // Include gender field
-          }
-        );
-
         toast({
           title: 'Nominee created',
-          description: 'The nominee has been successfully created',
-          variant: 'success'
+          description: photoUploadFailed
+            ? 'Nominee saved to the election, but the photo could not be uploaded. You can edit the nominee to retry.'
+            : 'The nominee has been successfully created',
+          variant: photoUploadFailed ? 'destructive' : 'success',
         });
       }
 
-      singleForm.reset();
-      onSuccess();
+      singleForm.reset({
+        name: '',
+        electionId: defaultElectionId || resolvedElectionId,
+        gender: 'male',
+        description: '',
+      });
+      clearPhotoSelection();
+      onSuccess?.({ electionId: resolvedElectionId, nominee: createdNominee });
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      const isNetworkError = /failed to fetch|networkerror|load failed|backend service unavailable/i.test(message);
       toast({
         title: 'Error',
-        description: `Failed to ${isEdit ? 'update' : 'create'} nominee: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        variant: 'destructive'
+        description: isNetworkError
+          ? `Could not reach the API while uploading the image. Restart election-api (port 8000) and election-portal, then try again. (${message})`
+          : `Failed to ${isEdit ? 'update' : 'create'} nominee: ${message}`,
+        variant: 'destructive',
       });
     }
   };
@@ -165,7 +409,17 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
   // Bulk nominees submission handler
   const onSubmitBulk = async (data: BulkNomineeFormValues) => {
     try {
-      const genderBased = isGenderBased(data.electionId);
+      const resolvedElectionId = (defaultElectionId || data.electionId || "").trim();
+      if (!resolvedElectionId) {
+        toast({
+          title: "Election required",
+          description: "Select an election before creating nominees.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const genderBased = isGenderBased(resolvedElectionId);
       // First, normalize the input by combining both commas and newlines as separators
       const input = data.namesWithGender.replace(/\n/g, ',');
       
@@ -181,7 +435,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
           // Neutral selection: each entry is simply a nominee name.
           nominees.push({
             name: trimmed,
-            electionId: data.electionId,
+            electionId: resolvedElectionId,
             status: 'active'
           });
           continue;
@@ -206,7 +460,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
         
         nominees.push({
           name,
-          electionId: data.electionId,
+          electionId: resolvedElectionId,
           gender: genderCode === 'm' ? 'male' : 'female',
           status: 'active'
         });
@@ -239,7 +493,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
         '/api/nominees/bulk',
         {
           nominees,
-          electionId: data.electionId
+          electionId: resolvedElectionId
         }
       );
 
@@ -249,8 +503,11 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
         variant: 'success'
       });
 
-      bulkForm.reset();
-      onSuccess();
+      bulkForm.reset({
+        namesWithGender: '',
+        electionId: defaultElectionId || resolvedElectionId,
+      });
+      onSuccess?.({ electionId: resolvedElectionId });
     } catch (error) {
       toast({
         title: 'Error',
@@ -279,7 +536,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
       });
 
       importPreviousForm.reset();
-      onSuccess();
+      onSuccess?.({ electionId: data.targetElectionId });
     } catch (error) {
       toast({
         title: 'Error',
@@ -321,7 +578,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
       });
 
       setImportFile(null);
-      onSuccess();
+      onSuccess?.(defaultElectionId ? { electionId: defaultElectionId } : undefined);
     } catch (error) {
       toast({
         title: 'Error',
@@ -350,7 +607,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                       <FormLabel>Election</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value || undefined}
                         disabled={true} // Can't change election in edit mode
                       >
                         <FormControl>
@@ -361,13 +618,9 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                         <SelectContent>
                           {Array.isArray(elections) && elections.map((election) => {
                                 const electionId = election._id?.toString() || election.id?.toString();
-                                const title = election.title || 'Untitled';
-                                const organization = election.organization || 'Organization';
-
-                                if (!electionId) return null;
                                 return (
                                   <SelectItem key={electionId} value={electionId}>
-                                    {title} - {organization}
+                                    {getElectionLabel(election)}
                                   </SelectItem>
                                 );
                               })}
@@ -401,10 +654,10 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Gender</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                      >
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value || undefined}
+                          >
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select gender" />
@@ -420,13 +673,14 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                   )}
                 />
                 )}
+                {renderOptionalDetailsFields(singleForm)}
               </div>
 
               <div className="flex justify-end space-x-2">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => onSuccess()}
+                  onClick={() => onSuccess?.()}
                 >
                   Cancel
                 </Button>
@@ -450,7 +704,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
               <Form {...singleForm}>
                 <form onSubmit={singleForm.handleSubmit(onSubmitSingle)} className="space-y-6">
                   <div className="space-y-4">
-                    {/* Election selection */}
+                    {!defaultElectionId && (
                     <FormField
                       control={singleForm.control}
                       name="electionId"
@@ -459,7 +713,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                           <FormLabel>Election</FormLabel>
                           <Select
                             onValueChange={field.onChange}
-                            defaultValue={field.value}
+                            value={field.value || undefined}
                           >
                             <FormControl>
                               <SelectTrigger>
@@ -469,13 +723,9 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                             <SelectContent>
                               {Array.isArray(elections) && elections.map((election) => {
                                 const electionId = election._id?.toString() || election.id?.toString();
-                                const title = election.title || 'Untitled';
-                                const organization = election.organization || 'Organization';
-
-                                if (!electionId) return null;
                                 return (
                                   <SelectItem key={electionId} value={electionId}>
-                                    {title} - {organization}
+                                    {getElectionLabel(election)}
                                   </SelectItem>
                                 );
                               })}
@@ -485,6 +735,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                         </FormItem>
                       )}
                     />
+                    )}
 
                     {/* Nominee name */}
                     <FormField
@@ -502,7 +753,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                     />
                     
                     {/* Nominee gender */}
-                    {isGenderBased(singleForm.watch('electionId')) && (
+                    {isGenderBased(defaultElectionId || singleForm.watch('electionId')) && (
                     <FormField
                       control={singleForm.control}
                       name="gender"
@@ -511,7 +762,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                           <FormLabel>Gender</FormLabel>
                           <Select
                             onValueChange={field.onChange}
-                            defaultValue={field.value}
+                            value={field.value || undefined}
                           >
                             <FormControl>
                               <SelectTrigger>
@@ -528,13 +779,14 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                       )}
                     />
                     )}
+                    {renderOptionalDetailsFields(singleForm)}
                   </div>
 
                   <div className="flex justify-end space-x-2">
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => onSuccess()}
+                      onClick={() => onSuccess?.()}
                     >
                       Cancel
                     </Button>
@@ -551,7 +803,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
               <Form {...bulkForm}>
                 <form onSubmit={bulkForm.handleSubmit(onSubmitBulk)} className="space-y-6">
                   <div className="space-y-4">
-                    {/* Election selection */}
+                    {!defaultElectionId && (
                     <FormField
                       control={bulkForm.control}
                       name="electionId"
@@ -560,7 +812,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                           <FormLabel>Election</FormLabel>
                           <Select
                             onValueChange={field.onChange}
-                            defaultValue={field.value}
+                            value={field.value || undefined}
                           >
                             <FormControl>
                               <SelectTrigger>
@@ -570,13 +822,9 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                             <SelectContent>
                               {Array.isArray(elections) && elections.map((election) => {
                                 const electionId = election._id?.toString() || election.id?.toString();
-                                const title = election.title || 'Untitled';
-                                const organization = election.organization || 'Organization';
-
-                                if (!electionId) return null;
                                 return (
                                   <SelectItem key={electionId} value={electionId}>
-                                    {title} - {organization}
+                                    {getElectionLabel(election)}
                                   </SelectItem>
                                 );
                               })}
@@ -586,6 +834,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                         </FormItem>
                       )}
                     />
+                    )}
 
                     {/* Comma-separated names with gender */}
                     <FormField
@@ -594,13 +843,13 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>
-                            {isGenderBased(bulkForm.watch('electionId'))
+                            {isGenderBased(defaultElectionId || bulkForm.watch('electionId'))
                               ? 'Nominee Names with Gender (comma-separated)'
                               : 'Nominee Names (comma-separated)'}
                           </FormLabel>
                           <FormControl>
                             <Textarea 
-                              placeholder={isGenderBased(bulkForm.watch('electionId'))
+                              placeholder={isGenderBased(defaultElectionId || bulkForm.watch('electionId'))
                                 ? 'Enter nominee names with gender separated by commas, e.g: John Doe-m, Jane Smith-f'
                                 : 'Enter nominee names separated by commas, e.g: John Doe, Jane Smith, Alex Johnson'}
                               className="min-h-[100px]"
@@ -608,7 +857,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                             />
                           </FormControl>
                           <div className="text-xs text-muted-foreground">
-                            {isGenderBased(bulkForm.watch('electionId'))
+                            {isGenderBased(defaultElectionId || bulkForm.watch('electionId'))
                               ? 'Format: Name-gender (m for male, f for female) separated by commas. Example: John Doe-m, Jane Smith-f'
                               : 'Enter one name per entry, separated by commas or new lines.'}
                           </div>
@@ -622,7 +871,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => onSuccess()}
+                      onClick={() => onSuccess?.()}
                     >
                       Cancel
                     </Button>
@@ -648,7 +897,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                           <FormLabel>Source Election</FormLabel>
                           <Select
                             onValueChange={field.onChange}
-                            defaultValue={field.value}
+                            value={field.value || undefined}
                           >
                             <FormControl>
                               <SelectTrigger>
@@ -658,13 +907,9 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                             <SelectContent>
                               {Array.isArray(elections) && elections.map((election) => {
                                 const electionId = election._id?.toString() || election.id?.toString();
-                                const title = election.title || 'Untitled';
-                                const organization = election.organization || 'Organization';
-
-                                if (!electionId) return null;
                                 return (
                                   <SelectItem key={electionId} value={electionId}>
-                                    {title} - {organization}
+                                    {getElectionLabel(election)}
                                   </SelectItem>
                                 );
                               })}
@@ -687,7 +932,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                           <FormLabel>Target Election</FormLabel>
                           <Select
                             onValueChange={field.onChange}
-                            defaultValue={field.value}
+                            value={field.value || undefined}
                           >
                             <FormControl>
                               <SelectTrigger>
@@ -697,13 +942,9 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                             <SelectContent>
                               {Array.isArray(elections) && elections.map((election) => {
                                 const electionId = election._id?.toString() || election.id?.toString();
-                                const title = election.title || 'Untitled';
-                                const organization = election.organization || 'Organization';
-
-                                if (!electionId) return null;
                                 return (
                                   <SelectItem key={electionId} value={electionId}>
-                                    {title} - {organization}
+                                    {getElectionLabel(election)}
                                   </SelectItem>
                                 );
                               })}
@@ -722,7 +963,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => onSuccess()}
+                      onClick={() => onSuccess?.()}
                     >
                       Cancel
                     </Button>
@@ -741,7 +982,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                   <div>
                     <div className="text-sm font-medium mb-2">Excel File</div>
                     <div className="mt-2 flex items-center justify-center w-full">
-                      <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                      <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-white hover:bg-primary/10">
                         <div className="flex flex-col items-center justify-center pt-5 pb-6">
                           <div className="w-8 h-8 mb-2 text-gray-500">📊</div>
                           <p className="mb-2 text-sm text-gray-500">
@@ -772,7 +1013,7 @@ export function NomineeForm({ onSuccess, elections, initialData, isEdit = false 
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => onSuccess()}
+                    onClick={() => onSuccess?.()}
                   >
                     Cancel
                   </Button>

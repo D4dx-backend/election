@@ -1,6 +1,7 @@
 const { getSupabase } = require("../../config/supabase");
 const { mapNominee, nomineeToRow } = require("./map");
 const { isUuid } = require("./users");
+const { buildIlikeOrFilter } = require("./filters");
 
 async function create(data) {
   const supabase = getSupabase();
@@ -96,9 +97,23 @@ async function countDocuments(filter = {}) {
 }
 
 async function find(filter = {}, { page, limit } = {}) {
+  if (filter.electionIds !== undefined && !filter.electionIds.length) {
+    return { nominees: [], total: 0 };
+  }
+
   const supabase = getSupabase();
   let query = supabase.from("nominees").select("*", { count: page !== undefined ? "exact" : undefined });
   if (filter.electionId) query = query.eq("election_id", filter.electionId);
+  if (filter.electionIds !== undefined && filter.electionIds.length) {
+    query = query.in("election_id", filter.electionIds);
+  }
+
+  if (filter.search && String(filter.search).trim()) {
+    const searchFilter = buildIlikeOrFilter(["name", "gender"], filter.search);
+    if (searchFilter) {
+      query = query.or(searchFilter);
+    }
+  }
 
   if (page !== undefined) {
     const pageNum = Math.max(page, 1);

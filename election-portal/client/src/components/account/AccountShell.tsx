@@ -13,7 +13,7 @@ interface AccountShellProps {
 
 function LoadingShell() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F6F8FB]">
+    <div className="min-h-screen flex items-center justify-center bg-white">
       <div className="space-y-3 w-full max-w-md px-6">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-32 w-full" />
@@ -35,7 +35,7 @@ export function AccountShell({ children, title, voterShowBack = true }: AccountS
   if (isVoter) {
     return (
       <VoterLayout title={title} showBack={voterShowBack}>
-        {children}
+        <div className="px-4 pt-4 pb-4 max-w-lg mx-auto w-full">{children}</div>
       </VoterLayout>
     );
   }

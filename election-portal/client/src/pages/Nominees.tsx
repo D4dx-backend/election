@@ -1,8 +1,16 @@
 import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
-import { PlusIcon, Pencil, Trash2, AlertCircle, FileText, FileSpreadsheet } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { PlusIcon, Pencil, Trash2, AlertCircle } from "lucide-react";
+import { DeleteModeBar } from "@/components/ui/delete-mode-bar";
+import { DeleteModeButton } from "@/components/ui/delete-mode-button";
+import { ExportMenu } from "@/components/ui/export-menu";
+import { RowSelectCheckbox } from "@/components/ui/row-select-checkbox";
+import { useBulkDeleteMode } from "@/hooks/useBulkDeleteMode";
+import { deleteByIds } from "@/lib/bulkDelete";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -29,70 +37,142 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { NomineeForm } from "@/components/nominees/NomineeForm";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { getElectionLabel, isElectionLocked } from "@/lib/electionHelpers";
 import { PaginationControls } from "@/components/ui/pagination-controls";
+import { NomineeForm } from "@/components/nominees/NomineeForm";
+import { NomineeAvatar } from "@/components/nominees/NomineeAvatar";
 
-export default function Nominees({ embedded = false, electionId }: { embedded?: boolean; electionId?: string } = {}) {
+export default function Nominees({
+  embedded = false,
+  electionId,
+  readOnly = false,
+}: { embedded?: boolean; electionId?: string; readOnly?: boolean } = {}) {
   const [selectedElectionId, setSelectedElectionId] = useState<string>(electionId || "all");
-  const [searchTerm, setSearchTerm] = useState<string>("");
-  const [deleteNomineeId, setDeleteNomineeId] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState<string>("");
+  const searchTerm = useDebouncedValue(searchInput, 300);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(null);
   const [isAddNomineeOpen, setIsAddNomineeOpen] = useState(false);
   const [isEditNomineeOpen, setIsEditNomineeOpen] = useState(false);
   const [currentNominee, setCurrentNominee] = useState<any>(null);
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (electionId) {
+      setSelectedElectionId(electionId);
+    }
+  }, [electionId]);
+
+  const refreshNomineeLists = async (
+    targetElectionId?: string,
+    createdNominee?: Record<string, unknown>
+  ) => {
+    const activeId =
+      targetElectionId ||
+      electionId ||
+      (selectedElectionId !== "all" ? selectedElectionId : "");
+
+    setPage(1);
+
+    if (createdNominee && activeId) {
+      queryClient.setQueriesData(
+        {
+          queryKey: ["/api/nominees"],
+          predicate: (query) => {
+            const [, eid, search, pg] = query.queryKey as [string, string, string, number];
+            if (eid !== "all" && eid !== activeId) return false;
+            if (String(search || "").trim()) return false;
+            if (pg !== 1) return false;
+            return true;
+          },
+        },
+        (old: { data?: unknown[]; pagination?: { total?: number; page?: number; pageSize?: number; totalPages?: number }; count?: number } | undefined) => {
+          if (!createdNominee) return old;
+          const nomineeId = String(createdNominee._id || createdNominee.id || "");
+          if (!old?.data || !Array.isArray(old.data)) {
+            return {
+              success: true,
+              count: 1,
+              data: [createdNominee],
+              pagination: { total: 1, page: 1, pageSize, totalPages: 1 },
+            };
+          }
+          if (nomineeId && old.data.some((n) => String((n as { _id?: string; id?: string })._id || (n as { id?: string }).id) === nomineeId)) {
+            return old;
+          }
+          const data = [createdNominee, ...old.data].slice(0, pageSize);
+          const total = (old.pagination?.total ?? old.data.length) + 1;
+          const pageSizeUsed = old.pagination?.pageSize ?? pageSize;
+          return {
+            ...old,
+            count: data.length,
+            data,
+            pagination: old.pagination
+              ? {
+                  ...old.pagination,
+                  total,
+                  page: 1,
+                  totalPages: Math.max(Math.ceil(total / pageSizeUsed), 1),
+                }
+              : undefined,
+          };
+        }
+      );
+    }
+
+    if (activeId) {
+      queryClient.setQueryData([`/api/nominees/election/${activeId}`], (old: { data?: unknown[]; count?: number } | undefined) => {
+        if (!createdNominee) return old;
+        const nomineeId = String(createdNominee._id || createdNominee.id || "");
+        const existing = Array.isArray(old?.data) ? old.data : [];
+        if (nomineeId && existing.some((n) => String((n as { _id?: string; id?: string })._id || (n as { id?: string }).id) === nomineeId)) {
+          return old;
+        }
+        const data = [createdNominee, ...existing];
+        return { success: true, count: data.length, data };
+      });
+    }
+
+    await queryClient.refetchQueries({ queryKey: ["/api/nominees"], type: "active" });
+    if (activeId) {
+      await queryClient.refetchQueries({
+        queryKey: [`/api/nominees/election/${activeId}`],
+        type: "active",
+      });
+    }
+  };
   
-  // Fetch nominees data
+  // Fetch nominees data (server-side pagination)
   const { 
     data: nomineesData, 
     isLoading: nomineesLoading,
     isError: nomineesError,
     refetch: refetchNominees
   } = useQuery({
-    queryKey: ['/api/nominees', selectedElectionId],
+    queryKey: ['/api/nominees', selectedElectionId, searchTerm, page, pageSize],
     queryFn: async () => {
-      try {
-        const token = localStorage.getItem('authToken');
-        if (!token) throw new Error('Authentication token not found');
-        
-        const queryString = selectedElectionId && selectedElectionId !== 'all' 
-          ? `?electionId=${selectedElectionId}` 
-          : '';
-          
-        const response = await fetch(`/api/nominees${queryString}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
-        if (!response.ok) throw new Error('Failed to fetch nominees');
-        
-        const data = await response.json();
-        console.log("Nominees API Response:", data);
-        return data;
-      } catch (error) {
-        console.error("Error fetching nominees:", error);
-        throw error;
+      const params = new URLSearchParams();
+      params.append('page', String(page));
+      params.append('limit', String(pageSize));
+      if (selectedElectionId && selectedElectionId !== 'all') {
+        params.append('electionId', selectedElectionId);
       }
+      if (searchTerm.trim()) {
+        params.append('search', searchTerm.trim());
+      }
+      const response = await apiRequest('GET', `/api/nominees?${params.toString()}`);
+      return response.json();
     },
     refetchOnWindowFocus: true,
-    staleTime: 5000 // Consider data fresh for 5 seconds
+    staleTime: 0,
   });
   
   // Fetch elections data
@@ -107,11 +187,7 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
         const token = localStorage.getItem('authToken');
         if (!token) throw new Error('Authentication token not found');
         
-        const response = await fetch('/api/elections', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        const response = await apiRequest('GET', '/api/elections');
         
         if (!response.ok) throw new Error('Failed to fetch elections');
         
@@ -126,29 +202,40 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
     staleTime: 5000 // Consider data fresh for 5 seconds
   });
   
-  // Delete nominee mutation
-  const { mutate: deleteNominee, isPending: isDeleting } = useMutation({
-    mutationFn: async (id: string) => {
-      return apiRequest('DELETE', `/api/nominees/${id}`);
-    },
-    onSuccess: () => {
-      toast({
-        title: "Nominee Deleted",
-        description: "Nominee has been deleted successfully",
-        variant: "success"
-      });
-      setDeleteNomineeId(null);
+  const deleteNomineesMutation = useMutation({
+    mutationFn: async (ids: string[]) => deleteByIds(ids, (id) => `/api/nominees/${id}`),
+    onSuccess: (result, ids) => {
+      setPendingDeleteIds(null);
+      selection.exitDeleteMode();
       refetchNominees();
-      queryClient.invalidateQueries({ queryKey: ['/api/nominees'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/nominees"] });
+
+      if (result.failed.length === 0) {
+        toast({
+          title: ids.length === 1 ? "Nominee deleted" : "Nominees deleted",
+          description:
+            ids.length === 1
+              ? "Nominee has been deleted successfully."
+              : `${result.deleted.length} nominee(s) deleted successfully.`,
+          variant: "success",
+        });
+        return;
+      }
+
+      toast({
+        title: "Some deletions failed",
+        description: `${result.deleted.length} deleted, ${result.failed.length} failed.`,
+        variant: "destructive",
+      });
     },
-    onError: (error) => {
-      console.error('Error deleting nominee:', error);
+    onError: () => {
       toast({
         title: "Error",
-        description: "Failed to delete nominee",
-        variant: "destructive"
+        description: "Failed to delete nominee(s)",
+        variant: "destructive",
       });
-    }
+      setPendingDeleteIds(null);
+    },
   });
 
   // Handle election selection change
@@ -158,7 +245,7 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
   
   // Handle search input change
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
+    setSearchInput(e.target.value);
   };
   
   // Handle edit nominee
@@ -167,74 +254,56 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
     setIsEditNomineeOpen(true);
   };
   
-  // Handle delete nominee
   const handleDeleteClick = (id: string) => {
-    setDeleteNomineeId(id);
+    setPendingDeleteIds([String(id)]);
   };
-  
-  // Confirm delete nominee
-  const confirmDelete = () => {
-    if (deleteNomineeId) {
-      deleteNominee(deleteNomineeId);
+
+  const handleBulkDeleteClick = () => {
+    if (selection.selectedCount > 0) {
+      setPendingDeleteIds([...selection.selectedIds]);
     }
   };
+
+  const confirmDelete = () => {
+    if (pendingDeleteIds?.length) {
+      deleteNomineesMutation.mutate(pendingDeleteIds);
+    }
+  };
+
+  const getNomineeId = (nominee: { _id?: string; id?: string }) =>
+    String(nominee._id || nominee.id || "");
   
-  // Extract nominees and elections from responses - accessing the right data property
   const nominees = nomineesData?.data || [];
   const elections = electionsData?.data || [];
-  
-  // Log data structure to debug
-  console.log("Nominees data type:", nominees && Array.isArray(nominees));
-  console.log("Elections data type:", elections && Array.isArray(elections));
-  
-  // Log the data structure for debugging
-  console.log("Election response:", electionsData);
-  console.log("Nominee response:", nomineesData);
-  
-  console.log('Nominees data from API:', nominees);
-  
-  // Filter nominees based on search term
-  const filteredNominees = nominees.filter((nominee: any) => 
-    searchTerm === "" || 
-    (nominee.name && nominee.name.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-  
-  // Filter nominees based on selected election
-  // When "all" is selected, we'll only show nominees from the user's franchise elections
-  // When a specific election is selected, we'll only show nominees from that election
-  const displayNominees = selectedElectionId === 'all' 
-    ? filteredNominees.filter((nominee: any) => {
-        // For "all" selection, only show nominees from elections in the user's franchise
-        const nomineeElectionId = nominee.electionId?._id?.toString() || 
-                                nominee.electionId?.toString() || 
-                                nominee.electionId;
-        // Check if this nominee's election is in the list of elections for this user's franchise
-        return elections.some((e: any) => {
-          const electionId = e._id?.toString() || e.id?.toString();
-          return electionId === nomineeElectionId;
-        });
-      })
-    : filteredNominees.filter((nominee: any) => {
-        const nomineeElectionId = nominee.electionId?._id?.toString() || 
-                                nominee.electionId?.toString() || 
-                                nominee.electionId;
-        return nomineeElectionId === selectedElectionId;
-      });
-  
-  console.log('Display nominees after filtering:', displayNominees);
+  const nomineesPagination = nomineesData?.pagination;
+  const totalNominees = nomineesPagination?.total ?? nominees.length;
+  const totalNomineePages = nomineesPagination?.totalPages ?? Math.max(Math.ceil(totalNominees / pageSize), 1);
+  const paginatedNominees = nominees;
+  const nomineePageIds = paginatedNominees.map(getNomineeId).filter(Boolean);
+  const selection = useBulkDeleteMode(nomineePageIds);
 
-  // Client-side pagination (10 per page) over the filtered list
-  const totalNominees = displayNominees.length;
-  const totalNomineePages = Math.max(Math.ceil(totalNominees / pageSize), 1);
-  const paginatedNominees = displayNominees.slice((page - 1) * pageSize, page * pageSize);
+  const fetchAllNomineesForExport = async () => {
+    const params = new URLSearchParams();
+    if (selectedElectionId && selectedElectionId !== 'all') {
+      params.append('electionId', selectedElectionId);
+    }
+    if (searchTerm.trim()) {
+      params.append('search', searchTerm.trim());
+    }
+    const qs = params.toString();
+    const response = await apiRequest('GET', `/api/nominees${qs ? `?${qs}` : ''}`);
+    const json = await response.json();
+    return Array.isArray(json.data) ? json.data : [];
+  };
 
   // Reset to first page when filters/search change
   useEffect(() => {
     setPage(1);
-  }, [searchTerm, selectedElectionId, totalNominees]);
+  }, [searchTerm, selectedElectionId]);
   // Export nominee data to PDF
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     try {
+      const displayNominees = await fetchAllNomineesForExport();
       // Create a new PDF document
       const doc = new jsPDF();
       
@@ -246,7 +315,7 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
           return electionId === selectedElectionId;
         });
         if (election) {
-          title = `${election.title} Nominees`;
+          title = `${getElectionLabel(election)} Nominees`;
         }
       }
       
@@ -272,7 +341,7 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
 
         return [
           String(nominee.name || "Unknown"),
-          String(election?.title || fallbackTitle || "Unknown Election"),
+          String(election ? getElectionLabel(election) : fallbackTitle || "Unknown Election"),
         ];
       });
 
@@ -302,8 +371,9 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
   };
   
   // Export nominee data to Excel
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     try {
+      const displayNominees = await fetchAllNomineesForExport();
       // Prepare data for Excel
       const excelData = displayNominees.map((nominee: any) => {
         const election = elections.find((e: any) => {
@@ -316,7 +386,7 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
         
         return {
           'Name': nominee.name || 'Unknown',
-          'Election': election ? election.title : 'Unknown Election'
+          'Election': election ? getElectionLabel(election) : 'Unknown Election'
         };
       });
       
@@ -334,7 +404,7 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
           return electionId === selectedElectionId;
         });
         if (election) {
-          title = `${election.title} Nominees`;
+          title = `${getElectionLabel(election)} Nominees`;
         }
       }
       
@@ -382,6 +452,14 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
         (e._id?.toString() || e.id?.toString()) === selectedElectionId
     )?.genderBasedSelection;
 
+  const selectedElection = elections.find(
+    (e: { _id?: string; id?: string; status?: string }) =>
+      (e._id?.toString() || e.id?.toString()) === selectedElectionId
+  );
+  const isReadOnly =
+    readOnly ||
+    (selectedElectionId !== "all" && isElectionLocked(selectedElection?.status));
+
   const Wrapper = embedded ? Fragment : MainLayout;
 
   return (
@@ -393,51 +471,64 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
         </div>
       )}
 
-      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-          {!embedded && (
-            <Select value={selectedElectionId} onValueChange={handleElectionChange}>
-              <SelectTrigger className="h-10 w-full sm:w-64">
-                <SelectValue placeholder="Select Election" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Elections</SelectItem>
-                {electionsLoading ? (
-                  <SelectItem value="loading" disabled>Loading elections...</SelectItem>
-                ) : (
-                  elections.map((election: any) => (
-                    <SelectItem
-                      key={election._id || election.id}
-                      value={election._id?.toString() || election.id?.toString()}
-                    >
-                      {election.title}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          )}
+      <div className="mb-4 flex flex-col gap-3 lg:mb-6">
+        {!embedded && (
+          <Select value={selectedElectionId} onValueChange={handleElectionChange}>
+            <SelectTrigger className="h-10 w-full sm:w-64">
+              <SelectValue placeholder="Select Election" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Elections</SelectItem>
+              {electionsLoading ? (
+                <SelectItem value="loading" disabled>Loading elections...</SelectItem>
+              ) : (
+                elections.map((election: any) => (
+                  <SelectItem
+                    key={election._id || election.id}
+                    value={election._id?.toString() || election.id?.toString()}
+                  >
+                    {getElectionLabel(election)}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+        )}
+
+        <div className="flex items-center gap-2">
           <Input
             placeholder="Search nominees..."
-            value={searchTerm}
+            value={searchInput}
             onChange={handleSearchChange}
-            className="h-10 w-full sm:max-w-xs"
+            className="h-10 min-w-0 flex-1 sm:max-w-md"
           />
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-          <Button size="sm" className="h-10" onClick={handleAddNominee}>
-            <PlusIcon className="h-4 w-4 mr-2" />
-            Nominee
-          </Button>
-          <Button variant="outline" size="sm" className="h-10" onClick={exportToPDF} disabled={!displayNominees?.length}>
-            <FileText className="h-4 w-4 mr-2" />
-            PDF
-          </Button>
-          <Button variant="outline" size="sm" className="h-10" onClick={exportToExcel} disabled={!displayNominees?.length}>
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
-            Excel
-          </Button>
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {!isReadOnly && (
+              <Button
+                size="sm"
+                className="h-10 w-10 shrink-0 p-0 sm:w-auto sm:px-3"
+                onClick={handleAddNominee}
+                aria-label="Add nominee"
+              >
+                <PlusIcon className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline sm:ml-2 whitespace-nowrap">Nominee</span>
+              </Button>
+            )}
+            <ExportMenu
+              onExportPdf={exportToPDF}
+              onExportExcel={exportToExcel}
+              disabled={totalNominees === 0}
+              iconOnlyOnMobile
+            />
+            {!isReadOnly && (
+              <DeleteModeButton
+                active={selection.deleteMode}
+                onClick={() =>
+                  selection.deleteMode ? selection.exitDeleteMode() : selection.enterDeleteMode()
+                }
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -451,11 +542,13 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Nominees List</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <Card className={embedded ? "border-0 shadow-none" : undefined}>
+        {!embedded && (
+          <CardHeader className="px-4 py-3 md:px-6">
+            <CardTitle>Nominees List</CardTitle>
+          </CardHeader>
+        )}
+        <CardContent className={embedded ? "p-0" : "px-4 md:px-6"}>
           {nomineesLoading ? (
             <div className="space-y-2">
               {[...Array(5)].map((_, i) => (
@@ -472,14 +565,25 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
                 Failed to load nominees. Please try again later.
               </AlertDescription>
             </Alert>
-          ) : displayNominees.length === 0 ? (
+          ) : totalNominees === 0 ? (
             <div className="text-center py-6">
               <p className="text-gray-500">No nominees found. Add some nominees to get started.</p>
             </div>
           ) : (
             <div>
+              {!isReadOnly && (
+                <DeleteModeBar
+                  active={selection.deleteMode}
+                  count={selection.selectedCount}
+                  entityLabel="nominee"
+                  onCancel={selection.exitDeleteMode}
+                  onConfirmDelete={handleBulkDeleteClick}
+                  deleting={deleteNomineesMutation.isPending}
+                />
+              )}
               <div className="divide-y divide-gray-100 md:hidden">
                 {paginatedNominees.map((nominee: any) => {
+                  const nomineeId = getNomineeId(nominee);
                   const election = elections.find((e: any) => {
                     const electionId = e._id?.toString() || e.id?.toString();
                     const nomineeElectionId = nominee.electionId?._id?.toString() || 
@@ -489,32 +593,56 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
                   });
 
                   return (
-                    <div key={nominee._id || nominee.id} className="py-4 space-y-3">
-                      <div className="min-w-0">
-                        <h3 className="font-semibold text-gray-900 truncate">{nominee.name}</h3>
-                        <p className="text-sm text-gray-500 truncate">{election ? election.title : 'Unknown Election'}</p>
+                    <div
+                      key={nomineeId}
+                      className="flex items-center gap-2 py-3.5 px-1"
+                    >
+                      {selection.showSelectors && (
+                        <RowSelectCheckbox
+                          checked={selection.isSelected(nomineeId)}
+                          onCheckedChange={() => selection.toggle(nomineeId)}
+                          aria-label={`Select ${nominee.name}`}
+                          className="mt-0.5"
+                        />
+                      )}
+                      <NomineeAvatar nominee={nominee} size="md" />
+                      <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-semibold text-gray-900 truncate">{nominee.name}</h3>
+                          {selectedElectionGenderBased && nominee.gender && (
+                            <Badge variant="outline" className="capitalize text-xs shrink-0">
+                              {nominee.gender}
+                            </Badge>
+                          )}
+                        </div>
+                        {!embedded && (
+                          <p className="text-sm text-gray-500 truncate mt-0.5">
+                            {election ? getElectionLabel(election) : "Unknown Election"}
+                          </p>
+                        )}
                       </div>
-                      {selectedElectionGenderBased && (
-                        <div className="rounded-md bg-gray-50 p-3 text-sm">
-                          <p className="text-xs text-gray-500">Gender</p>
-                          <p className="font-medium text-gray-900 capitalize">{nominee.gender || '—'}</p>
+                      {!isReadOnly && !selection.deleteMode && (
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9"
+                            aria-label={`Edit ${nominee.name}`}
+                            onClick={() => handleEditNominee(nominee)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 text-red-600 hover:text-red-900 hover:bg-red-50"
+                            aria-label={`Delete ${nominee.name}`}
+                            onClick={() => handleDeleteClick(nomineeId)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       )}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => handleEditNominee(nominee)}>
-                          <Pencil className="h-4 w-4 mr-1" />
-                          Edit
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="text-red-600 hover:text-red-900 hover:bg-red-50"
-                          onClick={() => handleDeleteClick(nominee._id || nominee.id)}
-                        >
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Delete
-                        </Button>
-                      </div>
                     </div>
                   );
                 })}
@@ -523,14 +651,27 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
                 <Table>
                 <TableHeader>
                   <TableRow>
+                    {selection.showSelectors && (
+                      <TableHead className="w-6 px-1">
+                        <RowSelectCheckbox
+                          checked={selection.allSelected ? true : selection.someSelected ? "indeterminate" : false}
+                          onCheckedChange={() => selection.toggleAll()}
+                          aria-label="Select all nominees on this page"
+                        />
+                      </TableHead>
+                    )}
+                    <TableHead className="w-14">
+                      <span className="sr-only">Photo</span>
+                    </TableHead>
                     <TableHead>Name</TableHead>
                     {selectedElectionGenderBased && <TableHead>Gender</TableHead>}
                     <TableHead>Election</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    {!isReadOnly && !selection.deleteMode && <TableHead className="text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedNominees.map((nominee: any) => {
+                    const nomineeId = getNomineeId(nominee);
                     // Find the associated election
                     const election = elections.find((e: any) => {
                       const electionId = e._id?.toString() || e.id?.toString();
@@ -541,27 +682,41 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
                     });
                     
                     return (
-                      <TableRow key={nominee._id || nominee.id}>
+                      <TableRow key={nomineeId}>
+                        {selection.showSelectors && (
+                          <TableCell className="w-6 px-1">
+                            <RowSelectCheckbox
+                              checked={selection.isSelected(nomineeId)}
+                              onCheckedChange={() => selection.toggle(nomineeId)}
+                              aria-label={`Select ${nominee.name}`}
+                            />
+                          </TableCell>
+                        )}
+                        <TableCell>
+                          <NomineeAvatar nominee={nominee} size="md" />
+                        </TableCell>
                         <TableCell className="font-medium">{nominee.name}</TableCell>
                         {selectedElectionGenderBased && (
                           <TableCell className="capitalize">{nominee.gender || '—'}</TableCell>
                         )}
-                        <TableCell>{election ? election.title : 'Unknown Election'}</TableCell>
-                        <TableCell className="text-right space-x-1">
-                          <Button variant="ghost" size="sm" onClick={() => handleEditNominee(nominee)}>
-                            <Pencil className="h-4 w-4 mr-1" />
-                            Edit
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="text-red-600 hover:text-red-900 hover:bg-red-50"
-                            onClick={() => handleDeleteClick(nominee._id || nominee.id)}
-                          >
-                            <Trash2 className="h-4 w-4 mr-1" />
-                            Delete
-                          </Button>
-                        </TableCell>
+                        <TableCell>{election ? getElectionLabel(election) : 'Unknown Election'}</TableCell>
+                        {!isReadOnly && !selection.deleteMode && (
+                          <TableCell className="text-right space-x-1">
+                            <Button variant="ghost" size="sm" onClick={() => handleEditNominee(nominee)}>
+                              <Pencil className="h-4 w-4 mr-1" />
+                              Edit
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-red-600 hover:text-red-900 hover:bg-red-50"
+                              onClick={() => handleDeleteClick(nomineeId)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })}
@@ -582,63 +737,66 @@ export default function Nominees({ embedded = false, electionId }: { embedded?: 
 
       {/* Add Nominee Dialog */}
       <Dialog open={isAddNomineeOpen} onOpenChange={setIsAddNomineeOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4">
             <DialogTitle>Add Nominees</DialogTitle>
             <DialogDescription>
               Add nominees to an election. You can add multiple nominees at once.
             </DialogDescription>
           </DialogHeader>
-          <NomineeForm 
-            onSuccess={() => {
-              setIsAddNomineeOpen(false);
-              refetchNominees();
-              queryClient.invalidateQueries({ queryKey: ['/api/nominees'] });
-            }}
-            elections={formElections}
-          />
+          <DialogBody className="px-6 pb-6">
+            <NomineeForm 
+              defaultElectionId={embedded ? selectedElectionId : undefined}
+              onSuccess={async (result) => {
+                setIsAddNomineeOpen(false);
+                await refreshNomineeLists(result?.electionId, result?.nominee);
+              }}
+              elections={formElections}
+            />
+          </DialogBody>
         </DialogContent>
       </Dialog>
 
       {/* Edit Nominee Dialog */}
       <Dialog open={isEditNomineeOpen} onOpenChange={setIsEditNomineeOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4">
             <DialogTitle>Edit Nominee</DialogTitle>
             <DialogDescription>
               Update nominee details.
             </DialogDescription>
           </DialogHeader>
-          <NomineeForm 
-            initialData={currentNominee}
-            isEdit={true}
-            elections={elections}
-            onSuccess={() => {
-              setIsEditNomineeOpen(false);
-              refetchNominees();
-              queryClient.invalidateQueries({ queryKey: ['/api/nominees'] });
-            }} 
-          />
+          <DialogBody className="px-6 pb-6">
+            <NomineeForm 
+              initialData={currentNominee}
+              isEdit={true}
+              elections={elections}
+              onSuccess={async (result) => {
+                setIsEditNomineeOpen(false);
+                await refreshNomineeLists(result?.electionId, result?.nominee);
+              }} 
+            />
+          </DialogBody>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!deleteNomineeId} onOpenChange={(open) => !open && setDeleteNomineeId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the nominee.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} disabled={isDeleting}>
-              {isDeleting ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={!!pendingDeleteIds?.length}
+        onOpenChange={(open) => !open && setPendingDeleteIds(null)}
+        onConfirm={confirmDelete}
+        loading={deleteNomineesMutation.isPending}
+        title="Are you sure?"
+        description={
+          pendingDeleteIds && pendingDeleteIds.length > 1
+            ? `This will permanently delete ${pendingDeleteIds.length} nominees. This action cannot be undone.`
+            : "This action cannot be undone. This will permanently delete the nominee."
+        }
+        confirmText={
+          pendingDeleteIds && pendingDeleteIds.length > 1
+            ? `Delete ${pendingDeleteIds.length} nominees`
+            : "Delete nominee"
+        }
+      />
     </Wrapper>
   );
 }

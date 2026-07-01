@@ -16,68 +16,58 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { insertElectionSchema } from "@shared/schema";
-import { ElectionGroup } from "@/lib/types";
+import { Franchise } from "@shared/schema";
 
-// Extend the insert schema with validation rules
-const formSchema = insertElectionSchema
-  .extend({
-    electionDate: z.string().min(1, "Election date is required"),
-    numberToBeElected: z.number().min(1, "Must elect at least 1 person"),
-    franchiseId: z.string().uuid().optional(),
-    file: z.any().optional()
-  });
+const formSchema = insertElectionSchema.extend({
+  electionDate: z.string().min(1, "Election date is required"),
+  numberToBeElected: z.number().min(1, "Must elect at least 1 person"),
+  franchiseId: z.string().uuid().optional(),
+  file: z.any().optional(),
+});
 
 type FormValues = z.infer<typeof formSchema>;
 
-// Import Franchise type
-import { Franchise } from "@shared/schema";
-
 interface ElectionFormProps {
   initialValues?: Partial<FormValues>;
-  electionGroups: ElectionGroup[];
   franchises?: Franchise[];
   showFranchiseSelect?: boolean;
-  onSubmit: (values: FormValues) => void;
+  onSubmit: (values: FormValues & { title: string }) => void;
   onCancel: () => void;
 }
 
-export function ElectionForm({ 
-  initialValues, 
-  electionGroups,
+export function ElectionForm({
+  initialValues,
   franchises = [],
   showFranchiseSelect = false,
-  onSubmit, 
-  onCancel 
+  onSubmit,
+  onCancel,
 }: ElectionFormProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  
+
   const { register, handleSubmit, formState, setValue, watch } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       organization: initialValues?.organization || "",
-      title: initialValues?.title || "",
-      electionDate: initialValues?.electionDate 
-        ? (initialValues.electionDate ? 
-            (typeof initialValues.electionDate === 'string' 
-              ? initialValues.electionDate 
-              : initialValues.electionDate instanceof Date 
-                ? initialValues.electionDate.toISOString().split('T')[0]
-                : new Date().toISOString().split('T')[0])
-            : new Date().toISOString().split('T')[0]) 
-        : new Date().toISOString().split('T')[0],
-      numberToBeElected: initialValues?.numberToBeElected || 1,
+      electionDate: initialValues?.electionDate
+        ? typeof initialValues.electionDate === "string"
+          ? initialValues.electionDate
+          : initialValues.electionDate instanceof Date
+            ? initialValues.electionDate.toISOString().split("T")[0]
+            : new Date().toISOString().split("T")[0]
+        : new Date().toISOString().split("T")[0],
+      numberToBeElected: initialValues?.numberToBeElected || initialValues?.maxNominees || 1,
       nomineeDisplayOrder: initialValues?.nomineeDisplayOrder || "ALPHA",
       voterResultDisplay: initialValues?.voterResultDisplay || "full",
       maxVoters: initialValues?.maxVoters || 0,
-      maxNominees: initialValues?.maxNominees || 0,
       genderBasedSelection: initialValues?.genderBasedSelection || false,
       maleMinimum: initialValues?.maleMinimum || 0,
       femaleMinimum: initialValues?.femaleMinimum || 0,
       selfRegOpen: initialValues?.selfRegOpen || false,
       votingOpen: initialValues?.votingOpen || false,
-      franchiseId: initialValues?.franchiseId || undefined, // No default franchise
-      
-    }
+      adminVotingDetailsEnabled: initialValues?.adminVotingDetailsEnabled || false,
+      manualWinnerSelection: initialValues?.manualWinnerSelection || false,
+      franchiseId: initialValues?.franchiseId || undefined,
+    },
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -89,7 +79,16 @@ export function ElectionForm({
   return (
     <Card>
       <CardContent className="p-6">
-        <form onSubmit={handleSubmit((values) => onSubmit({ ...values, logoFile: selectedFile }))}>
+        <form
+          onSubmit={handleSubmit((values) =>
+            onSubmit({
+              ...values,
+              title: values.organization.trim(),
+              maxNominees: values.numberToBeElected,
+              logoFile: selectedFile,
+            } as FormValues & { title: string; logoFile: File | null })
+          )}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <Label htmlFor="organization">Organization Name</Label>
@@ -101,18 +100,6 @@ export function ElectionForm({
               />
               {formState.errors.organization && (
                 <p className="text-sm text-red-500 mt-1">{formState.errors.organization.message}</p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="title">Election Title</Label>
-              <Input
-                id="title"
-                placeholder="e.g. Board Member Election"
-                {...register("title")}
-                className="mt-1"
-              />
-              {formState.errors.title && (
-                <p className="text-sm text-red-500 mt-1">{formState.errors.title.message}</p>
               )}
             </div>
           </div>
@@ -140,13 +127,16 @@ export function ElectionForm({
                 {...register("numberToBeElected", { valueAsNumber: true })}
                 className="mt-1"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                How many nominees each voter selects and how many can be elected
+              </p>
               {formState.errors.numberToBeElected && (
                 <p className="text-sm text-red-500 mt-1">{formState.errors.numberToBeElected.message}</p>
               )}
             </div>
             <div>
               <Label htmlFor="nomineeDisplayOrder">Nominee Display Order</Label>
-              <Select 
+              <Select
                 onValueChange={(value) => setValue("nomineeDisplayOrder", value)}
                 defaultValue={watch("nomineeDisplayOrder") || undefined}
               >
@@ -184,7 +174,7 @@ export function ElectionForm({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <Label htmlFor="maxVoters">Max Voters to Participate</Label>
               <Input
@@ -200,23 +190,6 @@ export function ElectionForm({
               </p>
               {formState.errors.maxVoters && (
                 <p className="text-sm text-red-500 mt-1">{formState.errors.maxVoters.message}</p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="maxNominees">Max Nominees to Elect</Label>
-              <Input
-                id="maxNominees"
-                type="number"
-                min="0"
-                placeholder="e.g. 5"
-                {...register("maxNominees", { valueAsNumber: true })}
-                className="mt-1"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                How many nominees can win (get elected), not the total on the ballot
-              </p>
-              {formState.errors.maxNominees && (
-                <p className="text-sm text-red-500 mt-1">{formState.errors.maxNominees.message}</p>
               )}
             </div>
             {watch("genderBasedSelection") === true && (
@@ -261,45 +234,66 @@ export function ElectionForm({
                 onCheckedChange={(checked) => setValue("genderBasedSelection", checked as boolean)}
               />
               <div>
-                <Label
-                  htmlFor="genderBasedSelection"
-                  className="font-medium text-gray-700 cursor-pointer"
-                >
+                <Label htmlFor="genderBasedSelection" className="font-medium text-gray-700 cursor-pointer">
                   Gender-based selection
                 </Label>
                 <p className="text-xs text-gray-500">Collect and enforce male/female requirements for this election</p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <Checkbox 
-                id="selfRegOpen" 
+              <Checkbox
+                id="selfRegOpen"
                 checked={watch("selfRegOpen") === true}
                 onCheckedChange={(checked) => setValue("selfRegOpen", checked as boolean)}
               />
               <div>
-                <Label 
-                  htmlFor="selfRegOpen" 
-                  className="font-medium text-gray-700 cursor-pointer"
-                >
+                <Label htmlFor="selfRegOpen" className="font-medium text-gray-700 cursor-pointer">
                   Allow Self Registration
                 </Label>
                 <p className="text-xs text-gray-500">Enable voters to self-register for this election</p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <Checkbox 
-                id="votingOpen" 
+              <Checkbox
+                id="votingOpen"
                 checked={watch("votingOpen") === true}
                 onCheckedChange={(checked) => setValue("votingOpen", checked as boolean)}
               />
               <div>
-                <Label 
-                  htmlFor="votingOpen" 
-                  className="font-medium text-gray-700 cursor-pointer"
-                >
+                <Label htmlFor="votingOpen" className="font-medium text-gray-700 cursor-pointer">
                   Open Voting
                 </Label>
                 <p className="text-xs text-gray-500">Enable voting as soon as election is created</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="adminVotingDetailsEnabled"
+                checked={watch("adminVotingDetailsEnabled") === true}
+                onCheckedChange={(checked) => setValue("adminVotingDetailsEnabled", checked as boolean)}
+              />
+              <div>
+                <Label htmlFor="adminVotingDetailsEnabled" className="font-medium text-gray-700 cursor-pointer">
+                  Admin Voting Details
+                </Label>
+                <p className="text-xs text-gray-500">
+                  Let admins see who each voter selected. Never shown to voters or included in printed results.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="manualWinnerSelection"
+                checked={watch("manualWinnerSelection") === true}
+                onCheckedChange={(checked) => setValue("manualWinnerSelection", checked as boolean)}
+              />
+              <div>
+                <Label htmlFor="manualWinnerSelection" className="font-medium text-gray-700 cursor-pointer">
+                  Manual Winner Selection
+                </Label>
+                <p className="text-xs text-gray-500">
+                  Choose winners manually after voting ends instead of auto-calculating from vote counts.
+                </p>
               </div>
             </div>
           </div>
@@ -307,41 +301,22 @@ export function ElectionForm({
           {showFranchiseSelect && (
             <div className="mb-6">
               <Label htmlFor="franchiseId">Franchise</Label>
-              <Select 
+              <Select
                 onValueChange={(value) => {
-                  // Store the franchise ID in the form
-                  if (value) {
-                    setValue("franchiseId", value);
-                  } else {
-                    setValue("franchiseId", undefined);
-                  }
+                  if (value) setValue("franchiseId", value);
+                  else setValue("franchiseId", undefined);
                 }}
-                defaultValue={
-                  watch("franchiseId") 
-                    ? String(watch("franchiseId")) 
-                    : ""
-                }
+                defaultValue={watch("franchiseId") ? String(watch("franchiseId")) : ""}
               >
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Select franchise" />
                 </SelectTrigger>
                 <SelectContent>
-                  {franchises && franchises.length > 0 && franchises.map(franchise => {
+                  {franchises?.map((franchise) => {
                     if (!franchise) return null;
-                    
-                    // Supabase UUID (_id or id from API)
-                    let franchiseId = '';
-                    try {
-                      franchiseId = franchise._id ? String(franchise._id) :
-                                  franchise.id ? String(franchise.id) : '';
-                    } catch (err) {
-                      console.log('Error getting franchise ID:', err);
-                      return null;
-                    }
-                    
-                    const name = franchise.name || '';
+                    const franchiseId = franchise._id ? String(franchise._id) : franchise.id ? String(franchise.id) : "";
+                    const name = franchise.name || "";
                     if (!franchiseId) return null;
-                    
                     return (
                       <SelectItem key={franchiseId} value={franchiseId}>
                         {name}
@@ -356,8 +331,6 @@ export function ElectionForm({
             </div>
           )}
 
-          
-
           <div className="mb-6">
             <Label htmlFor="logo">Election Logo (Optional)</Label>
             <div className="flex items-center mt-1">
@@ -368,9 +341,9 @@ export function ElectionForm({
                 onChange={handleFileChange}
                 className="hidden"
               />
-              <Label 
+              <Label
                 htmlFor="logo"
-                className="cursor-pointer inline-flex items-center px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition"
+                className="cursor-pointer inline-flex items-center px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-primary/5 transition"
               >
                 <Upload className="mr-2 h-4 w-4" />
                 Choose File

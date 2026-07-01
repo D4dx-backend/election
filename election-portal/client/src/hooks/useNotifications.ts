@@ -13,6 +13,8 @@ async function fetchNotifications(): Promise<AppNotification[]> {
     },
     credentials: "include",
   });
+  // Older deployed APIs may not expose this route yet — treat as empty, not an error.
+  if (res.status === 404) return [];
   if (!res.ok) {
     throw new Error(`${res.status}: Failed to load notifications`);
   }

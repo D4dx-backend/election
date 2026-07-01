@@ -3,6 +3,7 @@ const users = require("../lib/supabase/users");
 const bcrypt = require("bcryptjs");
 const roles = require("../lib/roles");
 const { logUserActivity } = require("../utils/auditLog");
+const { resolveShuffledPrefix } = require("../lib/prefixShuffle");
 
 exports.addVoterGroup = async (req, res) => {
   try {
@@ -151,9 +152,24 @@ exports.assignElections = async (req, res) => {
 
 exports.getGroupVoters = async (req, res) => {
   try {
-    const group = await voterGroups.findById(req.params.id, { populateVoters: true });
+    const group = await voterGroups.findById(req.params.id);
     if (!group) return res.status(404).json({ success: false, message: "Voter Group not found." });
-    const voters = Array.isArray(group.voters) ? group.voters : [];
+
+    if (req.query.page !== undefined) {
+      const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+      const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
+      const { voters, total } = await voterGroups.findGroupVotersPaginated(req.params.id, { page, limit });
+      const totalPages = Math.max(Math.ceil(total / limit), 1);
+      return res.status(200).json({
+        success: true,
+        count: voters.length,
+        pagination: { total, page, pageSize: limit, totalPages },
+        data: voters,
+      });
+    }
+
+    const fullGroup = await voterGroups.findById(req.params.id, { populateVoters: true });
+    const voters = Array.isArray(fullGroup?.voters) ? fullGroup.voters : [];
     res.status(200).json({ success: true, count: voters.length, data: voters });
   } catch (err) {
     console.error(err);
@@ -233,21 +249,21 @@ exports.generateVotersInGroup = async (req, res) => {
     const group = await voterGroups.findById(req.params.id, { populateElections: true });
     if (!group) return res.status(404).json({ success: false, message: "Voter Group not found." });
 
-    const prefix = req.body.prefix || group.prefix || "VOTE";
+    const shuffledPrefix = resolveShuffledPrefix(null, req.body.shuffledPrefix || req.body.prefix);
     const start = parseInt(req.body.startingNumber, 10) || group.startingNumber || 1001;
     const num = Math.min(parseInt(req.body.count, 10) || 10, 1000);
     const franchiseId = roles.resolveFranchiseIdForActor(req.user, req.body.franchiseId);
     const electionAccess = (group.elections || []).map((e) => (typeof e === "object" ? e._id || e.id : e));
 
     const usernames = [];
-    for (let i = 0; i < num; i++) usernames.push(`${prefix}${start + i}`);
+    for (let i = 0; i < num; i++) usernames.push(`${shuffledPrefix}${start + i}`);
     const existing = await users.findByUsernames(usernames);
     const existingSet = new Set(existing.map((u) => u.username.toLowerCase()));
 
     const docs = [];
     for (let i = 0; i < num; i++) {
       const seq = start + i;
-      const username = `${prefix}${seq}`;
+      const username = `${shuffledPrefix}${seq}`;
       if (existingSet.has(username.toLowerCase())) continue;
       const plainPassword = Math.random().toString(36).slice(-8);
       const hashedPassword = await bcrypt.hash(plainPassword, 10);
@@ -262,7 +278,7 @@ exports.generateVotersInGroup = async (req, res) => {
         registrationNumber: username,
         franchiseId,
         electionAccess,
-        voterMetadata: { prefix, sequenceNumber: seq },
+        voterMetadata: { prefix: shuffledPrefix, sequenceNumber: seq },
       });
     }
 
@@ -280,10 +296,12 @@ exports.generateVotersInGroup = async (req, res) => {
       success: true,
       count: created.length,
       skipped: num - created.length,
+      shuffledPrefix,
       data: created.map((u) => ({ id: u._id, username: u.username, plainPassword: u.plainPassword })),
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: err.toString() });
+    const status = err.statusCode || 500;
+    res.status(status).json({ success: false, message: err.message || err.toString() });
   }
 };

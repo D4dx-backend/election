@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { SelectCheckbox } from "@/components/ui/row-select-checkbox";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { InfoIcon, UserCircle2 } from "lucide-react";
@@ -44,25 +44,19 @@ export function NomineeCard({
   return (
     <>
       <Card 
-        className={`border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition ${isSelectable ? 'cursor-pointer' : ''}`}
+        className={`border border-gray-200 rounded-lg p-4 hover:bg-primary/5 transition ${isSelectable ? 'cursor-pointer' : ''}`}
         onClick={showDetailsOnClick ? handleShowDetails : undefined}
       >
         <CardContent className="p-0 flex items-center">
           {isSelectable && (
-            <Checkbox
-              id={`nominee-${nominee.id}`}
+            <SelectCheckbox
               checked={isSelected}
               onCheckedChange={handleSelect}
-              className="h-5 w-5 text-primary focus:ring-primary"
+              aria-label={`Select ${nominee.name}`}
             />
           )}
-          <div className={`${isSelectable ? 'ml-4' : ''} flex-1`}>
-            <label
-              htmlFor={`nominee-${nominee.id}`}
-              className={`font-medium text-gray-700 ${isSelectable ? 'cursor-pointer' : ''}`}
-            >
-              {nominee.name}
-            </label>
+          <div className={`${isSelectable ? 'ml-2' : ''} flex-1`}>
+            <p className="font-medium text-gray-700">{nominee.name}</p>
             {nominee.additionalInfo?.department && (
               <p className="text-sm text-gray-500">{nominee.additionalInfo.department}</p>
             )}

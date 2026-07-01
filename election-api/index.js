@@ -2,6 +2,7 @@ const express = require("express");
 const dotenv = require("dotenv");
 dotenv.config({ path: "./.env" });
 const cors = require("cors");
+const multer = require("multer");
 const connectDB = require("./config/db.js");
 const { handleError } = require("./utils/errorLog.js");
 const path = require("path");
@@ -44,9 +45,28 @@ app.use("/js", express.static(path.resolve(__dirname, "assets/js")));
 // User-uploaded images (franchise logos, election banners)
 app.use("/uploads", express.static(path.resolve(__dirname, "public/uploads")));
 
-// middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// middleware — skip JSON/urlencoded parsers for multipart (file uploads)
+function isMultipart(req) {
+  return String(req.headers["content-type"] || "").includes("multipart/form-data");
+}
+
+app.use((req, res, next) => {
+  if (isMultipart(req)) return next();
+  express.json({ limit: "15mb" })(req, res, next);
+});
+
+app.use((req, res, next) => {
+  if (isMultipart(req)) return next();
+  express.urlencoded({ extended: true })(req, res, next);
+});
+
+// Never cache authenticated API JSON — prevents stale lists after mutations (304).
+app.use("/api/v1", (_req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  next();
+});
 
 // route files
 const user = require("./routes/users.js");
@@ -76,12 +96,35 @@ app.use("/api/v1/voterGroup", voterGroup);
 app.use("/api/v1/onboarding", onboarding);
 app.use("/api/v1/notifications", notifications);
 
+// Multer / upload validation errors (before global handler)
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    const message =
+      err.code === "LIMIT_FILE_SIZE"
+        ? "Image must be 5MB or smaller."
+        : err.message;
+    return res.status(400).json({ success: false, message });
+  }
+  if (err?.message === "Only image files are allowed.") {
+    return res.status(400).json({ success: false, message: err.message });
+  }
+  next(err);
+});
+
 // --- Centralized Error Handling --- MUST BE THE LAST MIDDLEWARE
 app.use(handleError);
 
 app.get("/health", (_req, res) => res.status(200).json({ ok: true }));
 
 const PORT = process.env.PORT || 8000;
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+});
 
 async function startServer() {
   try {

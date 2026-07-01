@@ -10,17 +10,14 @@ import Elections from "@/pages/Elections";
 import CreateElection from "@/pages/CreateElection";
 import EditElection from "@/pages/EditElection";
 import ElectionWorkspace from "@/pages/ElectionWorkspace";
-import Nominees from "@/pages/Nominees";
 import Voters from "@/pages/Voters";
 import Analytics from "@/pages/Analytics";
-import ElectionGroups from "@/pages/ElectionGroups";
 import Franchises from "@/pages/Franchises";
 import Admins from "@/pages/Admins";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
 import Profile from "@/pages/Profile";
 import AuditLogs from "@/pages/AuditLogs";
-import VoterGroups from "@/pages/VoterGroups";
 import Login from "@/pages/Login";
 import ForgotPassword from "@/pages/ForgotPassword";
 import Onboarding from "@/pages/Onboarding";
@@ -30,6 +27,14 @@ import VotingResults from "@/pages/VotingResults";
 import NotFound from "@/pages/not-found";
 import { useEffect } from "react";
 import { canAccessPath } from "@/lib/roles";
+
+function RedirectTo({ path }: { path: string }) {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    setLocation(path);
+  }, [path, setLocation]);
+  return null;
+}
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -192,7 +197,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
   // Only if we have a token and are still loading (not on login page)
   if (hasToken && isLoading && location !== '/login' && !location.startsWith('/voting/')) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-white">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-2 text-gray-600">Loading...</p>
@@ -225,13 +230,13 @@ function Router() {
         <Route path="/elections/:id/edit" component={EditElection} />
         <Route path="/elections/:id" component={ElectionWorkspace} />
         <Route path="/elections" component={Elections} />
-        <Route path="/nominees" component={Nominees} />
+        <Route path="/nominees" component={() => <RedirectTo path="/elections" />} />
         <Route path="/voters" component={Voters} />
-        <Route path="/analytics" component={Analytics} />
-        <Route path="/election-groups" component={ElectionGroups} />
+        <Route path="/analytics" component={() => <RedirectTo path="/elections" />} />
+        <Route path="/election-groups" component={() => <RedirectTo path="/elections" />} />
         <Route path="/franchises" component={Franchises} />
         <Route path="/admins" component={Admins} />
-        <Route path="/voter-groups" component={VoterGroups} />
+        <Route path="/voter-groups" component={() => <RedirectTo path="/voters" />} />
         <Route path="/reports" component={Reports} />
         <Route path="/profile" component={Profile} />
         <Route path="/settings" component={Settings} />
