@@ -1,28 +1,18 @@
-const elections = require("../lib/supabase/elections");
+const elections = require("../lib/elections");
 const nominees = require("../lib/supabase/nominees");
 const { enrichElectionsWithCounts } = require("../lib/supabase/electionCounts");
-const { logUserActivity } = require("../utils/auditLog");
+const { logUserActivity, logAuditFromReq } = require("../utils/auditLog");
 const { denyUnlessCanAccessElection } = require("../lib/electionAccess");
-
-function normalizeElectionBody(body) {
-  [
-    "selfRegOpen",
-    "votingOpen",
-    "resultsPublished",
-    "genderBasedSelection",
-    "adminVotingDetailsEnabled",
-    "manualWinnerSelection",
-  ].forEach((key) => {
-    if (typeof body[key] === "string") {
-      body[key] = body[key] === "true";
-    }
-  });
-  return body;
-}
+const {
+  applyElectionLifecycleRules,
+  syncElectionLifecycle,
+} = require("../lib/electionLifecycle");
+const { normalizeElectionBody } = require("../lib/electionBody");
 
 exports.addElection = async (req, res) => {
   try {
     normalizeElectionBody(req.body);
+    applyElectionLifecycleRules(req.body);
     if (req.file?.cdnUrl) {
       req.body.logo = { url: req.file.cdnUrl, alt: req.body.title };
     }
@@ -40,7 +30,8 @@ exports.getElectionById = async (req, res) => {
     const election = await elections.findById(req.params.id);
     if (!election) return res.status(404).json({ success: false, message: "Election not found." });
     if (await denyUnlessCanAccessElection(req, res, election)) return;
-    const [enriched] = await enrichElectionsWithCounts([election]);
+    const synced = await syncElectionLifecycle(election, elections.updateById);
+    const [enriched] = await enrichElectionsWithCounts([synced]);
     res.status(200).json({ success: true, data: enriched });
   } catch (err) {
     console.error(err);
@@ -65,11 +56,13 @@ exports.updateElectionById = async (req, res) => {
     if (await denyUnlessCanAccessElection(req, res, existing)) return;
 
     normalizeElectionBody(req.body);
+    applyElectionLifecycleRules(req.body, existing);
     if (req.file?.cdnUrl) {
       req.body.logo = { url: req.file.cdnUrl, alt: req.body.title };
     }
     const election = await elections.updateById(req.params.id, req.body);
     if (!election) return res.status(404).json({ success: false, message: "Election not found." });
+    await logAuditFromReq(req, "Updated", election.title || election.organization, "Election", election._id || election.id);
     res.status(200).json({ success: true, data: election });
   } catch (err) {
     console.error(err);
@@ -93,6 +86,7 @@ exports.deleteElectionById = async (req, res) => {
 
     const election = await elections.deleteById(req.params.id);
     if (!election) return res.status(404).json({ success: false, message: "Election not found." });
+    await logAuditFromReq(req, "Deleted", existing.title || existing.organization, "Election", existing._id || existing.id);
     res.status(200).json({ success: true, message: "Election deleted." });
   } catch (err) {
     console.error(err);
@@ -190,7 +184,10 @@ exports.getElections = async (req, res) => {
       const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
       const limit = Math.max(parseInt(req.query.limit || req.query.pageSize, 10) || 10, 1);
       const { elections: paged, total } = await elections.findWithPagination(filter, page, limit);
-      const enriched = await enrichElectionsWithCounts(paged);
+      const synced = await Promise.all(
+        paged.map((e) => syncElectionLifecycle(e, elections.updateById))
+      );
+      const enriched = await enrichElectionsWithCounts(synced);
       const totalPages = Math.max(Math.ceil(total / limit), 1);
       return res.status(200).json({
         success: true,
@@ -200,7 +197,11 @@ exports.getElections = async (req, res) => {
       });
     }
 
-    const data = await enrichElectionsWithCounts(await elections.find(filter));
+    const list = await elections.find(filter);
+    const synced = await Promise.all(
+      list.map((e) => syncElectionLifecycle(e, elections.updateById))
+    );
+    const data = await enrichElectionsWithCounts(synced);
     res.status(200).json({ success: true, count: data.length, data });
   } catch (err) {
     console.error(err);
@@ -211,10 +212,16 @@ exports.getElections = async (req, res) => {
 exports.updateElection = async (req, res) => {
   try {
     const { id } = req.body;
+    const existing = await elections.findById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Election not found." });
+    }
+    if (await denyUnlessCanAccessElection(req, res, existing)) return;
     const election = await elections.updateById(id, req.body);
     if (!election) {
       return res.status(404).json({ success: false, message: "Election not found." });
     }
+    await logAuditFromReq(req, "Updated", election.title || election.organization, "Election", election._id || election.id);
     res.status(200).json({ success: true, data: election });
   } catch (err) {
     console.error(err);
@@ -225,10 +232,16 @@ exports.updateElection = async (req, res) => {
 exports.deleteElection = async (req, res) => {
   try {
     const { id } = req.query;
+    const existing = await elections.findById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Election not found." });
+    }
+    if (await denyUnlessCanAccessElection(req, res, existing)) return;
     const election = await elections.deleteById(id);
     if (!election) {
       return res.status(404).json({ success: false, message: "Election not found." });
     }
+    await logAuditFromReq(req, "Deleted", election.title || election.organization, "Election", election._id || election.id);
     res.status(200).json({ success: true, message: "Election deleted." });
   } catch (err) {
     console.error(err);

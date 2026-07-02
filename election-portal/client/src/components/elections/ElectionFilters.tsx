@@ -42,8 +42,8 @@ export function ElectionFilters({ franchises, onApplyFilters }: ElectionFiltersP
   const handleApplyFilters = () => {
     const filters: ElectionFilter = {};
     
-    if (franchiseId) {
-      filters.franchiseId = parseInt(franchiseId);
+    if (franchiseId && franchiseId !== "all") {
+      filters.franchiseId = franchiseId;
     }
     
     if (status) {

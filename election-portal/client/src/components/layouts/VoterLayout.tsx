@@ -152,8 +152,8 @@ export default function VoterLayout({ children, title, showBack, onBack }: Voter
       </header>
 
       {/* ── Main Content ── */}
-      <main className="flex flex-1 flex-col min-h-[calc(100dvh-4rem)] pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
-        <div className="flex flex-1 flex-col">{children}</div>
+      <main className="flex flex-1 flex-col min-h-[calc(100dvh-4rem)] pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8 bg-gray-50/80 dark:bg-gray-900">
+        <div className="flex flex-1 flex-col w-full">{children}</div>
         <SiteFooter />
       </main>
 

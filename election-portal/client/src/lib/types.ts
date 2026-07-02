@@ -2,7 +2,7 @@ import { User, Franchise, Election, Nominee, Vote, ElectionGroup, VoterGroup, El
 
 export type { Election, Nominee, ElectionGroup, Franchise, User, Vote, VoterGroup, ElectionAnalytic };
 
-/** API entity shape from Supabase-backed election-api (_id + id are UUID strings). */
+/** API entity shape from election-api (_id + id are Supabase UUID strings). */
 export interface ApiEntityFormat {
   _id?: string;
   id?: string;
@@ -58,7 +58,11 @@ export interface DashboardStats {
   totalFranchises: number;
   totalElections: number;
   franchiseDistribution: {
+    id?: string;
     name: string;
+    websiteUrl?: string | null;
+    contactNumber?: string | null;
+    electionCount?: number;
     percentage: number;
   }[];
   recentActivity: {

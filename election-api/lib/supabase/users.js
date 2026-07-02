@@ -2,12 +2,7 @@ const { getSupabase } = require("../../config/supabase");
 const { mapUser, userToRow } = require("./map");
 const { matchesVoterSearch } = require("./searchHelpers");
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function isUuid(id) {
-  return id && UUID_RE.test(String(id));
-}
+const { isEntityId, isUuid } = require("../entityId");
 
 async function getElectionAccessForUsers(userIds) {
   const map = new Map();
@@ -262,6 +257,7 @@ async function create(data) {
   }
   row.created_at = new Date().toISOString();
   row.updated_at = row.created_at;
+  if (!row.status) row.status = "active";
 
   const { data: created, error } = await supabase.from("users").insert(row).select().single();
   if (error) {
@@ -510,6 +506,7 @@ async function userHasElectionAccess(userId, electionId) {
 }
 
 module.exports = {
+  isEntityId,
   isUuid,
   findById,
   findByUsername,

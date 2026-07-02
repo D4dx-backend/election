@@ -1,11 +1,6 @@
 const { getSupabase } = require("../../config/supabase");
 const { mapElectionGroup, electionGroupToRow } = require("./map");
-const { isUuid } = require("./users");
-
-function isRecordId(id) {
-  const s = String(id);
-  return isUuid(s) || /^[0-9a-fA-F]{24}$/.test(s);
-}
+const { isEntityId } = require("../entityId");
 
 async function loadElectionIds(groupIds) {
   const map = new Map();
@@ -39,7 +34,7 @@ async function syncElections(groupId, elections) {
   await supabase.from("election_group_elections").delete().eq("election_group_id", groupId);
   const electionIds = (elections || [])
     .map((e) => (typeof e === "object" ? e._id || e.id : e))
-    .filter(isRecordId);
+    .filter(isEntityId);
   if (electionIds.length) {
     const rows = electionIds.map((electionId) => ({
       election_group_id: groupId,
@@ -66,7 +61,7 @@ async function create(data) {
 }
 
 async function findById(id) {
-  if (!isUuid(id)) return null;
+  if (!isEntityId(id)) return null;
   const supabase = getSupabase();
   const { data, error } = await supabase.from("election_groups").select("*").eq("id", id).maybeSingle();
   if (error) throw error;
@@ -76,7 +71,7 @@ async function findById(id) {
 }
 
 async function updateById(id, data) {
-  if (!isUuid(id)) return null;
+  if (!isEntityId(id)) return null;
   const supabase = getSupabase();
   const { elections, ...rest } = data;
   const row = electionGroupToRow(rest);
@@ -96,7 +91,7 @@ async function updateById(id, data) {
 }
 
 async function deleteById(id) {
-  if (!isUuid(id)) return null;
+  if (!isEntityId(id)) return null;
   const group = await findById(id);
   if (!group) return null;
 

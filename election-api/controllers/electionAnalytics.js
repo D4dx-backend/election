@@ -1,10 +1,10 @@
 const electionAnalytics = require("../lib/supabase/electionAnalytics");
-const elections = require("../lib/supabase/elections");
+const elections = require("../lib/elections");
 const votes = require("../lib/supabase/votes");
 const franchises = require("../lib/supabase/franchises");
 const users = require("../lib/supabase/users");
 const { sendVoteReminders: runSendVoteReminders } = require("../lib/reminders/sendVoteReminders");
-const { logUserActivity } = require("../utils/auditLog");
+const { logUserActivity, logAuditFromReq } = require("../utils/auditLog");
 const { canAccessElection, denyUnlessCanAccessElection } = require("../lib/electionAccess");
 
 async function filterAnalyticsForUser(user, rows) {
@@ -63,9 +63,28 @@ exports.getDashboardStats = async (req, res) => {
       const total =
         Object.values(countMap).reduce((a, b) => a + b, 0) || 1;
       franchiseDistribution = franchiseList.map((f) => ({
+        id: f._id || f.id,
         name: f.name,
-        percentage: Math.round(((countMap[String(f._id)] || 0) / total) * 100),
+        websiteUrl: f.websiteUrl || null,
+        contactNumber: f.contactNumber || null,
+        electionCount: countMap[String(f._id || f.id)] || 0,
+        percentage: Math.round(((countMap[String(f._id || f.id)] || 0) / total) * 100),
       }));
+    } else if (role === "franchise_admin" && franchiseId) {
+      const franchise = await franchises.findById(franchiseId);
+      if (franchise) {
+        const countMap = await elections.countByFranchise();
+        franchiseDistribution = [
+          {
+            id: franchise._id || franchise.id,
+            name: franchise.name,
+            websiteUrl: franchise.websiteUrl || null,
+            contactNumber: franchise.contactNumber || null,
+            electionCount: countMap[String(franchise._id || franchise.id)] || 0,
+            percentage: 100,
+          },
+        ];
+      }
     }
 
     const recentActivity = electionList
@@ -146,6 +165,8 @@ exports.addElectionAnalytics = async (req, res) => {
     }
 
     const analytics = await electionAnalytics.create(req.body);
+    const label = analytics.electionId ? `election ${analytics.electionId}` : "analytics record";
+    await logAuditFromReq(req, "Created", label, "Election Analytics", analytics._id || analytics.id);
     res.status(201).json({ success: true, message: "Election analytics created.", analytics });
   } catch (err) {
     console.error("Controller Error in addElectionAnalytics:", err.message);
@@ -208,6 +229,8 @@ exports.updateElectionAnalytics = async (req, res) => {
     if (!analytics) {
       return res.status(404).json({ success: false, message: "Election analytics not found." });
     }
+    const label = analytics.electionId ? `election ${analytics.electionId}` : "analytics record";
+    await logAuditFromReq(req, "Updated", label, "Election Analytics", analytics._id || analytics.id);
     res.status(200).json({ success: true, data: analytics });
   } catch (err) {
     console.error("Controller Error in updateElectionAnalytics:", err.message);
@@ -236,6 +259,8 @@ exports.deleteElectionAnalytics = async (req, res) => {
     if (!analytics) {
       return res.status(404).json({ success: false, message: "Election analytics not found." });
     }
+    const label = existing.electionId ? `election ${existing.electionId}` : "analytics record";
+    await logAuditFromReq(req, "Deleted", label, "Election Analytics", existing._id || existing.id);
     res.status(200).json({ success: true, message: "Election analytics deleted successfully." });
   } catch (err) {
     console.error("Controller Error in deleteElectionAnalytics:", err.message);

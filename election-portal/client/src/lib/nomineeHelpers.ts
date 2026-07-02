@@ -6,7 +6,7 @@ export type NomineePhotoSource = {
   photo_url?: string | null;
 } | null | undefined;
 
-/** Raw photo URL from API (Mongo, Supabase, or legacy shapes). Empty if none assigned. */
+/** Raw photo URL from API. Empty if none assigned. */
 export function extractNomineePhotoRaw(nominee: NomineePhotoSource): string {
   if (!nominee) return "";
 

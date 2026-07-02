@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -12,18 +12,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Upload } from "lucide-react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { insertElectionSchema } from "@shared/schema";
 import { Franchise } from "@shared/schema";
+import {
+  resolveElectionFormDefaults,
+  applyElectionLifecycleRules,
+  toFormBoolean,
+} from "@/lib/electionHelpers";
+import { useToast } from "@/hooks/use-toast";
+
+const formBoolean = z.preprocess((value) => toFormBoolean(value, false), z.boolean());
 
 const formSchema = insertElectionSchema.extend({
-  electionDate: z.string().min(1, "Election date is required"),
-  numberToBeElected: z.number().min(1, "Must elect at least 1 person"),
-  franchiseId: z.string().uuid().optional(),
-  file: z.any().optional(),
-});
+    electionDate: z.string().min(1, "Election date is required"),
+    numberToBeElected: z.coerce.number().min(1, "Must elect at least 1 person"),
+    maxVoters: z.coerce.number().int().min(0).optional(),
+    maleMinimum: z.coerce.number().int().min(0).optional(),
+    femaleMinimum: z.coerce.number().int().min(0).optional(),
+    genderBasedSelection: formBoolean.optional(),
+    selfRegOpen: formBoolean.optional(),
+    votingOpen: formBoolean.optional(),
+    adminVotingDetailsEnabled: formBoolean.optional(),
+    manualWinnerSelection: formBoolean.optional(),
+    file: z.any().optional(),
+  });
 
 type FormValues = z.infer<typeof formSchema>;
 
@@ -42,33 +57,28 @@ export function ElectionForm({
   onSubmit,
   onCancel,
 }: ElectionFormProps) {
+  const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const formDefaults = useMemo(
+    () => resolveElectionFormDefaults(initialValues as Record<string, unknown> | undefined),
+    [initialValues]
+  );
 
-  const { register, handleSubmit, formState, setValue, watch } = useForm<FormValues>({
+  const { register, handleSubmit, formState, setValue, watch, reset, control } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      organization: initialValues?.organization || "",
-      electionDate: initialValues?.electionDate
-        ? typeof initialValues.electionDate === "string"
-          ? initialValues.electionDate
-          : initialValues.electionDate instanceof Date
-            ? initialValues.electionDate.toISOString().split("T")[0]
-            : new Date().toISOString().split("T")[0]
-        : new Date().toISOString().split("T")[0],
-      numberToBeElected: initialValues?.numberToBeElected || initialValues?.maxNominees || 1,
-      nomineeDisplayOrder: initialValues?.nomineeDisplayOrder || "ALPHA",
-      voterResultDisplay: initialValues?.voterResultDisplay || "full",
-      maxVoters: initialValues?.maxVoters || 0,
-      genderBasedSelection: initialValues?.genderBasedSelection || false,
-      maleMinimum: initialValues?.maleMinimum || 0,
-      femaleMinimum: initialValues?.femaleMinimum || 0,
-      selfRegOpen: initialValues?.selfRegOpen || false,
-      votingOpen: initialValues?.votingOpen || false,
-      adminVotingDetailsEnabled: initialValues?.adminVotingDetailsEnabled || false,
-      manualWinnerSelection: initialValues?.manualWinnerSelection || false,
-      franchiseId: initialValues?.franchiseId || undefined,
-    },
+    defaultValues: formDefaults,
   });
+
+  useEffect(() => {
+    reset(resolveElectionFormDefaults(initialValues as Record<string, unknown> | undefined), {
+      keepDefaultValues: false,
+    });
+  }, [initialValues, reset]);
+
+  const electionDateValue = watch("electionDate");
+  const votingOpenValue = watch("votingOpen");
+  const nomineeDisplayOrder = watch("nomineeDisplayOrder");
+  const voterResultDisplay = watch("voterResultDisplay");
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -80,13 +90,30 @@ export function ElectionForm({
     <Card>
       <CardContent className="p-6">
         <form
-          onSubmit={handleSubmit((values) =>
-            onSubmit({
-              ...values,
-              title: values.organization.trim(),
-              maxNominees: values.numberToBeElected,
-              logoFile: selectedFile,
-            } as FormValues & { title: string; logoFile: File | null })
+          onSubmit={handleSubmit(
+            (values) => {
+              const withLifecycle = applyElectionLifecycleRules({
+                ...values,
+                title: values.organization.trim(),
+                maxNominees: values.numberToBeElected,
+              });
+              onSubmit({
+                ...withLifecycle,
+                logoFile: selectedFile,
+              } as FormValues & { title: string; logoFile: File | null });
+            },
+            (errors) => {
+              const message =
+                Object.values(errors)
+                  .map((err) => err?.message)
+                  .filter(Boolean)
+                  .join(". ") || "Please check the form and try again.";
+              toast({
+                title: "Could not save election",
+                description: String(message),
+                variant: "destructive",
+              });
+            }
           )}
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -110,7 +137,10 @@ export function ElectionForm({
               <Input
                 id="electionDate"
                 type="date"
-                {...register("electionDate")}
+                value={electionDateValue || ""}
+                onChange={(e) =>
+                  setValue("electionDate", e.target.value, { shouldValidate: true, shouldDirty: true })
+                }
                 className="mt-1"
               />
               {formState.errors.electionDate && (
@@ -137,8 +167,8 @@ export function ElectionForm({
             <div>
               <Label htmlFor="nomineeDisplayOrder">Nominee Display Order</Label>
               <Select
+                value={nomineeDisplayOrder || "ALPHA"}
                 onValueChange={(value) => setValue("nomineeDisplayOrder", value)}
-                defaultValue={watch("nomineeDisplayOrder") || undefined}
               >
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Select order" />
@@ -156,8 +186,8 @@ export function ElectionForm({
             <div>
               <Label htmlFor="voterResultDisplay">Voter Result Display</Label>
               <Select
+                value={voterResultDisplay || "full"}
                 onValueChange={(value) => setValue("voterResultDisplay", value)}
-                defaultValue={watch("voterResultDisplay") || "full"}
               >
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Select what voters see" />
@@ -228,10 +258,16 @@ export function ElectionForm({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div className="flex items-center space-x-2">
-              <Checkbox
-                id="genderBasedSelection"
-                checked={watch("genderBasedSelection") === true}
-                onCheckedChange={(checked) => setValue("genderBasedSelection", checked as boolean)}
+              <Controller
+                name="genderBasedSelection"
+                control={control}
+                render={({ field }) => (
+                  <Checkbox
+                    id="genderBasedSelection"
+                    checked={field.value === true}
+                    onCheckedChange={(checked) => field.onChange(checked === true)}
+                  />
+                )}
               />
               <div>
                 <Label htmlFor="genderBasedSelection" className="font-medium text-gray-700 cursor-pointer">
@@ -241,10 +277,16 @@ export function ElectionForm({
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <Checkbox
-                id="selfRegOpen"
-                checked={watch("selfRegOpen") === true}
-                onCheckedChange={(checked) => setValue("selfRegOpen", checked as boolean)}
+              <Controller
+                name="selfRegOpen"
+                control={control}
+                render={({ field }) => (
+                  <Checkbox
+                    id="selfRegOpen"
+                    checked={field.value === true}
+                    onCheckedChange={(checked) => field.onChange(checked === true)}
+                  />
+                )}
               />
               <div>
                 <Label htmlFor="selfRegOpen" className="font-medium text-gray-700 cursor-pointer">
@@ -254,23 +296,39 @@ export function ElectionForm({
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <Checkbox
-                id="votingOpen"
-                checked={watch("votingOpen") === true}
-                onCheckedChange={(checked) => setValue("votingOpen", checked as boolean)}
+              <Controller
+                name="votingOpen"
+                control={control}
+                render={({ field }) => (
+                  <Checkbox
+                    id="votingOpen"
+                    checked={field.value === true}
+                    onCheckedChange={(checked) => field.onChange(checked === true)}
+                  />
+                )}
               />
               <div>
                 <Label htmlFor="votingOpen" className="font-medium text-gray-700 cursor-pointer">
                   Open Voting
                 </Label>
-                <p className="text-xs text-gray-500">Enable voting as soon as election is created</p>
+                <p className="text-xs text-gray-500">
+                  {votingOpenValue
+                    ? "Election will be marked Active while voting is open."
+                    : "Enable voting as soon as election is created"}
+                </p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <Checkbox
-                id="adminVotingDetailsEnabled"
-                checked={watch("adminVotingDetailsEnabled") === true}
-                onCheckedChange={(checked) => setValue("adminVotingDetailsEnabled", checked as boolean)}
+              <Controller
+                name="adminVotingDetailsEnabled"
+                control={control}
+                render={({ field }) => (
+                  <Checkbox
+                    id="adminVotingDetailsEnabled"
+                    checked={field.value === true}
+                    onCheckedChange={(checked) => field.onChange(checked === true)}
+                  />
+                )}
               />
               <div>
                 <Label htmlFor="adminVotingDetailsEnabled" className="font-medium text-gray-700 cursor-pointer">
@@ -282,10 +340,16 @@ export function ElectionForm({
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <Checkbox
-                id="manualWinnerSelection"
-                checked={watch("manualWinnerSelection") === true}
-                onCheckedChange={(checked) => setValue("manualWinnerSelection", checked as boolean)}
+              <Controller
+                name="manualWinnerSelection"
+                control={control}
+                render={({ field }) => (
+                  <Checkbox
+                    id="manualWinnerSelection"
+                    checked={field.value === true}
+                    onCheckedChange={(checked) => field.onChange(checked === true)}
+                  />
+                )}
               />
               <div>
                 <Label htmlFor="manualWinnerSelection" className="font-medium text-gray-700 cursor-pointer">

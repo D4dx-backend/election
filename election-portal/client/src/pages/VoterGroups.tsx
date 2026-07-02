@@ -887,6 +887,30 @@ export default function VoterGroups({
             onConfirmDelete={() => selection.selectedCount > 0 && setPendingDeleteIds([...selection.selectedIds])}
             deleting={deleteGroupsMutation.isPending}
           />
+          {selection.showSelectors && groups.length > 0 && (
+            <div className="mb-3 flex items-center justify-between rounded-md border bg-white px-3 py-2">
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 text-sm font-medium text-primary"
+                onClick={() => selection.toggleAll()}
+                aria-label="Select all groups on this page"
+              >
+                <RowSelectCheckbox
+                  checked={
+                    selection.allSelected
+                      ? true
+                      : selection.someSelected
+                        ? "indeterminate"
+                        : false
+                  }
+                  onCheckedChange={() => selection.toggleAll()}
+                  aria-label="Select all groups on this page"
+                />
+                <span>{selection.allSelected ? "Clear selection" : "Select all on this page"}</span>
+              </button>
+              <span className="text-xs text-gray-500">{groups.length} shown</span>
+            </div>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
           {groups.map((g) => {
             const voterCount = g.voters?.length ?? 0;

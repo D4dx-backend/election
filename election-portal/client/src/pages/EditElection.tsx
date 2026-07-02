@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ElectionForm } from "@/components/elections/ElectionForm";
 import { useToast } from "@/hooks/use-toast";
-import { getElectionLabel, isElectionLocked } from "@/lib/electionHelpers";
+import { getElectionLabel, isElectionLocked, buildElectionSubmitPayload } from "@/lib/electionHelpers";
+import { apiRequest, apiFormRequest, queryClient } from "@/lib/queryClient";
 
 export default function EditElection() {
   const { id } = useParams<{ id: string }>();
@@ -13,35 +14,32 @@ export default function EditElection() {
 
   const { data: election, isLoading: isElectionLoading } = useQuery({
     queryKey: [`/api/elections/${id}`],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/elections/${id}`);
+      const json = await res.json();
+      return json.data ?? json;
+    },
+    enabled: !!id,
   });
 
   const handleSubmit = async (formData: Record<string, unknown>) => {
+    if (!id) return;
     try {
-      const { logoFile, ...submitData } = formData;
+      const { payload, logoFile } = buildElectionSubmitPayload(formData);
 
-      if (logoFile instanceof File) {
+      if (logoFile) {
         const body = new FormData();
-        Object.entries(submitData).forEach(([key, value]) => {
+        Object.entries(payload).forEach(([key, value]) => {
           if (value !== undefined && value !== null) body.append(key, String(value));
         });
         body.append("logo", logoFile);
-        const res = await fetch(`/api/elections/${id}`, {
-          method: "PUT",
-          headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` },
-          body,
-        });
-        if (!res.ok) throw new Error("Failed to update election");
+        await apiFormRequest("PUT", `/api/elections/${id}`, body);
       } else {
-        const res = await fetch(`/api/elections/${id}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("authToken")}`,
-          },
-          body: JSON.stringify(submitData),
-        });
-        if (!res.ok) throw new Error("Failed to update election");
+        await apiRequest("PUT", `/api/elections/${id}`, payload);
       }
+
+      await queryClient.invalidateQueries({ queryKey: ["/api/elections"] });
+      await queryClient.invalidateQueries({ queryKey: [`/api/elections/${id}`] });
 
       toast({
         title: "Election updated",
@@ -49,12 +47,13 @@ export default function EditElection() {
         variant: "success",
       });
 
-      navigate("/elections");
+      navigate(`/elections/${id}`);
     } catch (error) {
       console.error("Error updating election:", error);
       toast({
         title: "Error",
-        description: "There was a problem updating the election. Please try again.",
+        description:
+          error instanceof Error ? error.message : "There was a problem updating the election. Please try again.",
         variant: "destructive",
       });
     }
@@ -70,7 +69,7 @@ export default function EditElection() {
 
   useEffect(() => {
     if (!election || isElectionLoading) return;
-    const status = election.status ?? election.data?.status;
+    const status = election?.status;
     if (isElectionLocked(status)) {
       toast({
         title: "Election is locked",
@@ -97,8 +96,8 @@ export default function EditElection() {
     );
   }
 
-  const electionData = (election as { data?: typeof election }).data ?? election;
-  if (isElectionLocked(electionData.status)) {
+  const electionData = election;
+  if (isElectionLocked(electionData?.status)) {
     return null;
   }
 
@@ -109,7 +108,12 @@ export default function EditElection() {
         <p className="text-sm text-gray-600">{getElectionLabel(election)}</p>
       </div>
 
-      <ElectionForm initialValues={electionData} onSubmit={handleSubmit} onCancel={handleCancel} />
+      <ElectionForm
+        key={id}
+        initialValues={electionData}
+        onSubmit={handleSubmit}
+        onCancel={handleCancel}
+      />
     </MainLayout>
   );
 }

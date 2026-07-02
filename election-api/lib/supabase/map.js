@@ -1,4 +1,9 @@
 const { resolvePublicImageUrl } = require("../spacesStorage");
+const { toBodyBoolean } = require("../electionBody");
+const {
+  readFranchiseContactFields,
+  mergeFranchiseSettings,
+} = require("../franchiseSettings");
 
 function mapUser(row, extras = {}) {
   if (!row) return null;
@@ -16,7 +21,7 @@ function mapUser(row, extras = {}) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastLogin: row.last_login,
-    status: row.status,
+    status: row.status || "active",
     isVoter: row.is_voter,
     onboardingCompleted: row.onboarding_completed,
     electionAccess: extras.electionAccess || [],
@@ -55,27 +60,41 @@ function userToRow(data) {
 
 function mapFranchise(row) {
   if (!row) return null;
+  const settings = row.settings && typeof row.settings === "object" ? row.settings : {};
+  const contact = readFranchiseContactFields({ settings, ...row });
+
   return {
     _id: row.id,
     id: row.id,
     name: row.name,
+    websiteUrl: contact.websiteUrl || undefined,
+    contactNumber: contact.contactNumber || undefined,
     logo: row.logo_url
       ? { url: resolvePublicImageUrl(row.logo_url), alt: row.logo_alt }
       : undefined,
     status: row.status,
-    settings: row.settings || {},
+    settings,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function franchiseToRow(data) {
+function franchiseToRow(data, existingSettings = {}) {
   const row = {};
   if (data.name !== undefined) row.name = data.name;
   if (data.status !== undefined) row.status = data.status;
-  if (data.settings !== undefined) row.settings = data.settings;
   if (data.logo?.url !== undefined) row.logo_url = data.logo.url;
   if (data.logo?.alt !== undefined) row.logo_alt = data.logo.alt;
+
+  const shouldMergeSettings =
+    data.settings !== undefined ||
+    data.websiteUrl !== undefined ||
+    data.contactNumber !== undefined;
+
+  if (shouldMergeSettings) {
+    row.settings = mergeFranchiseSettings(existingSettings, data);
+  }
+
   row.updated_at = new Date().toISOString();
   return row;
 }
@@ -93,16 +112,16 @@ function mapElection(row) {
     nomineeDisplayOrder: row.nominee_display_order,
     maxVoters: row.max_voters,
     maxNominees: row.max_nominees,
-    genderBasedSelection: row.gender_based_selection,
+    genderBasedSelection: !!row.gender_based_selection,
     maleMinimum: row.male_minimum,
     femaleMinimum: row.female_minimum,
-    selfRegOpen: row.self_reg_open,
-    votingOpen: row.voting_open,
-    resultsPublished: row.results_published,
+    selfRegOpen: !!row.self_reg_open,
+    votingOpen: !!row.voting_open,
+    resultsPublished: !!row.results_published,
     resultsPublishedAt: row.results_published_at,
     voterResultDisplay: row.voter_result_display,
-    adminVotingDetailsEnabled: row.admin_voting_details_enabled,
-    manualWinnerSelection: row.manual_winner_selection,
+    adminVotingDetailsEnabled: !!row.admin_voting_details_enabled,
+    manualWinnerSelection: !!row.manual_winner_selection,
     manualWinnerIds: Array.isArray(row.manual_winner_ids) ? row.manual_winner_ids : [],
     createdBy: row.created_by,
     createdAt: row.created_at,
@@ -125,18 +144,22 @@ function electionToRow(data) {
   if (data.nomineeDisplayOrder !== undefined) row.nominee_display_order = data.nomineeDisplayOrder;
   if (data.maxVoters !== undefined) row.max_voters = data.maxVoters;
   if (data.maxNominees !== undefined) row.max_nominees = data.maxNominees;
-  if (data.genderBasedSelection !== undefined) row.gender_based_selection = data.genderBasedSelection;
+  if (data.genderBasedSelection !== undefined) {
+    row.gender_based_selection = toBodyBoolean(data.genderBasedSelection);
+  }
   if (data.maleMinimum !== undefined) row.male_minimum = data.maleMinimum;
   if (data.femaleMinimum !== undefined) row.female_minimum = data.femaleMinimum;
-  if (data.selfRegOpen !== undefined) row.self_reg_open = data.selfRegOpen;
-  if (data.votingOpen !== undefined) row.voting_open = data.votingOpen;
-  if (data.resultsPublished !== undefined) row.results_published = data.resultsPublished;
+  if (data.selfRegOpen !== undefined) row.self_reg_open = toBodyBoolean(data.selfRegOpen);
+  if (data.votingOpen !== undefined) row.voting_open = toBodyBoolean(data.votingOpen);
+  if (data.resultsPublished !== undefined) row.results_published = toBodyBoolean(data.resultsPublished);
   if (data.resultsPublishedAt !== undefined) row.results_published_at = data.resultsPublishedAt;
   if (data.voterResultDisplay !== undefined) row.voter_result_display = data.voterResultDisplay;
   if (data.adminVotingDetailsEnabled !== undefined) {
-    row.admin_voting_details_enabled = data.adminVotingDetailsEnabled;
+    row.admin_voting_details_enabled = toBodyBoolean(data.adminVotingDetailsEnabled);
   }
-  if (data.manualWinnerSelection !== undefined) row.manual_winner_selection = data.manualWinnerSelection;
+  if (data.manualWinnerSelection !== undefined) {
+    row.manual_winner_selection = toBodyBoolean(data.manualWinnerSelection);
+  }
   if (data.manualWinnerIds !== undefined) row.manual_winner_ids = data.manualWinnerIds;
   if (data.createdBy !== undefined) row.created_by = data.createdBy;
   if (data.status !== undefined) row.status = data.status;

@@ -1,7 +1,7 @@
 const users = require("../lib/supabase/users");
 const voterGroups = require("../lib/supabase/voterGroups");
 const bcrypt = require("bcryptjs");
-const { logUserActivity } = require("../utils/auditLog");
+const { logUserActivity, logAuditFromReq } = require("../utils/auditLog");
 const roles = require("../lib/roles");
 const { resolveShuffledPrefix } = require("../lib/prefixShuffle");
 
@@ -424,9 +424,16 @@ exports.generateVoters = async (req, res) => {
     const created = await users.insertMany(docs);
 
     if (voterGroupId) {
-      const createdIds = created.map((u) => u._id);
       await voterGroups.addVotersToGroup(voterGroupId, createdIds);
     }
+
+    await logAuditFromReq(
+      req,
+      "Generated",
+      `${created.length} voters`,
+      "Voter",
+      voterGroupId || null
+    );
 
     res.status(201).json({
       success: true,
@@ -449,18 +456,17 @@ exports.assignVotersToElection = async (req, res) => {
     if (!Array.isArray(voterIds) || voterIds.length === 0) {
       return res.status(400).json({ success: false, message: "voterIds must be a non-empty array." });
     }
-    if (!users.isUuid(electionId)) {
+    if (!users.isEntityId(electionId)) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid electionId. Supabase uses UUID election IDs — open an election created in the current database, not an old MongoDB link.",
+        message: "Invalid electionId.",
       });
     }
-    const validVoterIds = voterIds.filter((id) => users.isUuid(id));
+    const validVoterIds = voterIds.filter((id) => users.isEntityId(id));
     if (validVoterIds.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "No valid voter IDs supplied. Voter IDs must be UUIDs from the current database.",
+        message: "No valid voter IDs supplied.",
       });
     }
 
@@ -518,7 +524,9 @@ exports.createFranchiseAdmin = async (req, res) => {
       fullName,
       franchiseId,
       role: "franchise_admin",
+      status: "active",
     });
+    await logAuditFromReq(req, "Created", user.username, "Franchise Admin", user._id || user.id);
     res.status(201).json({
       success: true,
       message: "Franchise admin created.",
@@ -552,7 +560,9 @@ exports.createElectionAdmin = async (req, res) => {
       franchiseId,
       electionAccess,
       role: "election_admin",
+      status: "active",
     });
+    await logAuditFromReq(req, "Created", user.username, "Election Admin", user._id || user.id);
     res.status(201).json({
       success: true,
       message: "Election admin created.",
@@ -572,6 +582,7 @@ exports.resetPassword = async (req, res) => {
     if (!newPassword) return res.status(400).json({ success: false, message: "newPassword is required." });
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await users.updateById(req.params.id, { password: hashedPassword });
+    await logAuditFromReq(req, "Reset password for", existing.username, "User", existing._id || existing.id);
     res.status(200).json({ success: true, message: "Password reset successfully." });
   } catch (err) {
     sendError(res, err);

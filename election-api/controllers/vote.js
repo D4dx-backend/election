@@ -1,8 +1,8 @@
 const votes = require("../lib/supabase/votes");
-const elections = require("../lib/supabase/elections");
+const elections = require("../lib/elections");
 const nominees = require("../lib/supabase/nominees");
 const users = require("../lib/supabase/users");
-const { logUserActivity } = require("../utils/auditLog");
+const { logUserActivity, logAuditFromReq } = require("../utils/auditLog");
 const { denyUnlessCanAccessElection } = require("../lib/electionAccess");
 
 function computeElectedIds(sortedResults, election) {
@@ -288,6 +288,7 @@ exports.updateVote = async (req, res) => {
     if (!vote) {
       return res.status(404).json({ success: false, message: "Vote not found." });
     }
+    await logAuditFromReq(req, "Updated", vote.electionId || "vote", "Vote", vote._id || vote.id);
     res.status(200).json({ success: true, data: vote });
   } catch (err) {
     console.error(err);
@@ -302,6 +303,7 @@ exports.deleteVote = async (req, res) => {
     if (!vote) {
       return res.status(404).json({ success: false, message: "Vote not found." });
     }
+    await logAuditFromReq(req, "Deleted", vote.electionId || "vote", "Vote", vote._id || vote.id);
     res.status(200).json({ success: true, message: "Vote deleted." });
   } catch (err) {
     console.error(err);

@@ -1,5 +1,5 @@
 const franchises = require("../lib/supabase/franchises");
-const { logUserActivity } = require("../utils/auditLog");
+const { logAuditFromReq } = require("../utils/auditLog");
 const { sameFranchise } = require("../lib/roles");
 
 function assertFranchiseAccess(actor, franchise) {
@@ -37,20 +37,40 @@ exports.updateFranchiseById = async (req, res) => {
     if (!existing) return res.status(404).json({ success: false, message: "Franchise not found." });
     assertFranchiseAccess(req.user, existing);
 
+    normalizeFranchiseBody(req);
     if (req.file?.cdnUrl) {
       req.body.logo = { url: req.file.cdnUrl, alt: req.body.name };
     }
     const franchise = await franchises.updateById(req.params.id, req.body);
+    await logAuditFromReq(req, "Updated", franchise.name, "Franchise", franchise._id || franchise.id);
     res.status(200).json({ success: true, data: franchise });
   } catch (err) {
     sendError(res, err);
   }
 };
 
+function cascadeAuditLabel(cascade) {
+  if (!cascade) return "";
+  const parts = [];
+  if (cascade.elections) parts.push(`${cascade.elections} election(s)`);
+  if (cascade.users) parts.push(`${cascade.users} user(s)`);
+  if (cascade.voterGroups) parts.push(`${cascade.voterGroups} voter group(s)`);
+  if (cascade.electionGroups) parts.push(`${cascade.electionGroups} election group(s)`);
+  return parts.length ? ` (+ ${parts.join(", ")})` : "";
+}
+
 exports.deleteFranchiseById = async (req, res) => {
   try {
-    const franchise = await franchises.deleteById(req.params.id);
-    if (!franchise) return res.status(404).json({ success: false, message: "Franchise not found." });
+    const result = await franchises.deleteById(req.params.id);
+    if (!result) return res.status(404).json({ success: false, message: "Franchise not found." });
+    const { franchise, cascadeDeleted } = result;
+    await logAuditFromReq(
+      req,
+      "Deleted",
+      `${franchise.name}${cascadeAuditLabel(cascadeDeleted)}`,
+      "Franchise",
+      franchise._id || franchise.id
+    );
     res.status(200).json({ success: true, message: "Franchise deleted." });
   } catch (err) {
     console.error(err);
@@ -58,8 +78,20 @@ exports.deleteFranchiseById = async (req, res) => {
   }
 };
 
+function normalizeFranchiseBody(req) {
+  const body = req.body || {};
+  if (body.website_url !== undefined && body.websiteUrl === undefined) {
+    body.websiteUrl = body.website_url;
+  }
+  if (body.contact_number !== undefined && body.contactNumber === undefined) {
+    body.contactNumber = body.contact_number;
+  }
+  return body;
+}
+
 exports.addFranchise = async (req, res) => {
   try {
+    normalizeFranchiseBody(req);
     const existingFranchise = await franchises.findByName(req.body.name);
     if (existingFranchise) {
       return res.status(409).json({ success: false, message: "Franchise already exists." });
@@ -68,7 +100,7 @@ exports.addFranchise = async (req, res) => {
       req.body.logo = { url: req.file.cdnUrl, alt: req.body.name };
     }
     const franchise = await franchises.create(req.body);
-    await logUserActivity(req.user._id, req.ip, "Created", franchise.name, "Franchise");
+    await logAuditFromReq(req, "Created", franchise.name, "Franchise", franchise._id || franchise.id);
     res.status(201).json({ success: true, message: "Franchise created.", franchise });
   } catch (err) {
     console.error(err);
@@ -104,11 +136,17 @@ exports.getFranchises = async (req, res) => {
 exports.updateFranchise = async (req, res) => {
   try {
     const { id } = req.body;
+    const existing = await franchises.findById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Franchise not found." });
+    }
+    assertFranchiseAccess(req.user, existing);
+    normalizeFranchiseBody(req);
     const franchise = await franchises.updateById(id, req.body);
     if (!franchise) {
       return res.status(404).json({ success: false, message: "Franchise not found." });
     }
-    await logUserActivity(req.user._id, req.ip, "Updated", franchise.name, "Franchise");
+    await logAuditFromReq(req, "Updated", franchise.name, "Franchise", franchise._id || franchise.id);
     res.status(200).json({ success: true, data: franchise });
   } catch (err) {
     console.error(err);
@@ -119,11 +157,23 @@ exports.updateFranchise = async (req, res) => {
 exports.deleteFranchise = async (req, res) => {
   try {
     const { id } = req.query;
-    const franchise = await franchises.deleteById(id);
-    if (!franchise) {
+    const existing = await franchises.findById(id);
+    if (!existing) {
       return res.status(404).json({ success: false, message: "Franchise not found." });
     }
-    await logUserActivity(req.user._id, req.ip, "Deleted", franchise.name, "Franchise");
+    assertFranchiseAccess(req.user, existing);
+    const result = await franchises.deleteById(id);
+    if (!result) {
+      return res.status(404).json({ success: false, message: "Franchise not found." });
+    }
+    const { franchise, cascadeDeleted } = result;
+    await logAuditFromReq(
+      req,
+      "Deleted",
+      `${franchise.name}${cascadeAuditLabel(cascadeDeleted)}`,
+      "Franchise",
+      franchise._id || franchise.id
+    );
     res.status(200).json({ success: true, message: "Franchise deleted." });
   } catch (err) {
     console.error(err);

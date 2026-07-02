@@ -1,10 +1,13 @@
 const users = require("../lib/supabase/users");
+const { logAuditFromReq } = require("../utils/auditLog");
 
 exports.completeOnboarding = async (req, res) => {
   try {
     const user = await users.updateById(req.user._id, { onboardingCompleted: true });
 
     if (!user) return res.status(404).json({ success: false, message: "User not found." });
+
+    await logAuditFromReq(req, "Completed onboarding", user.username, "User", user._id || user.id);
 
     res.status(200).json({
       success: true,

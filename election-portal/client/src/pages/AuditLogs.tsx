@@ -59,6 +59,8 @@ export default function AuditLogs() {
       return res.json();
     },
     placeholderData: (prev) => prev,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   // Server returns newest-first and already paginated

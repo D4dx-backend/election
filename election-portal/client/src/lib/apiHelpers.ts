@@ -7,14 +7,9 @@ export function extractApiList<T>(raw: unknown): T[] {
   return [];
 }
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export { isEntityId, isUuid, isLegacyMongoId } from "@shared/entityId";
 
-export function isUuid(value: unknown): boolean {
-  return typeof value === "string" && UUID_RE.test(value.trim());
-}
-
-/** Normalize Supabase/API entity ids (_id and id are both UUID strings). */
+/** Normalize API entity ids (_id and id — Supabase UUID strings). */
 export function normalizeEntityId(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "object") {

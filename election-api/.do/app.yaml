@@ -35,6 +35,10 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         scope: RUN_TIME
         type: SECRET
+      # Legacy production elections (24-char Mongo ids) until migrate:from-api completes
+      - key: MONGO_URI
+        scope: RUN_TIME
+        type: SECRET
       - key: JWT_SECRET
         scope: RUN_TIME
         type: SECRET

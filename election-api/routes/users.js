@@ -3,7 +3,7 @@ const {
   addUser, getUsers, updateUser, deleteUser,
   getUserById, getFranchiseAdmins, getElectionAdmins,
   createFranchiseAdmin, createElectionAdmin, resetPassword, getAllVoters,
-  generateVoters, createVoter, assignVotersToElection,
+  generateVoters, createVoter,
 } = require("../controllers/user");
 const { protect, authorize } = require("../middleware/auth");
 
@@ -17,7 +17,6 @@ router.get("/election-admins", protect, franchiseOrSuper, getElectionAdmins);
 router.get("/voters", protect, admin, getAllVoters);
 router.post("/voters", protect, admin, createVoter);
 router.post("/voters/generate", protect, admin, generateVoters);
-router.post("/voters/assign-election", protect, admin, assignVotersToElection);
 router.delete("/voters/:id", protect, admin, deleteUser);
 router.post("/franchise-admin", protect, superAdmin, createFranchiseAdmin);
 router.post("/election-admin", protect, franchiseOrSuper, createElectionAdmin);

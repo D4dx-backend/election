@@ -1,0 +1,36 @@
+---
+description: Entity ID validation — UUID + legacy Mongo ObjectId
+alwaysApply: true
+---
+
+# Entity IDs
+
+Entity ids (`franchiseId`, `electionId`, `voterId`, etc.) may be:
+
+- **Supabase UUID** (new stack), or
+- **Legacy Mongo ObjectId** — 24-character hex (production data until migration)
+
+**Never** use `z.string().uuid()` directly — it rejects valid legacy ids and causes silent form failures (`Invalid ID` on save).
+
+## Shared helpers
+
+- **Portal:** `@shared/entityId`
+  - `isEntityId` — UUID **or** legacy Mongo id (forms, routes, Zod schemas)
+  - `isUuid` — Supabase UUID only (strict DB checks on client when needed)
+  - `isLegacyMongoId` — 24-char hex only
+  - `entityIdSchema`, `optionalEntityIdSchema`, `requiredEntityIdSchema`, `selectedEntityIdSchema`
+- **API:** `election-api/lib/entityId.js` — same functions
+- **Normalize ids from API:** `normalizeEntityId()` in `@/lib/apiHelpers` (handles `_id` / populated objects)
+
+## Zod rules
+
+- Never chain `.min()` / `.max()` after `.refine()` on entity ID schemas — use `entityIdString()` helpers instead.
+- Use `optionalEntityIdSchema` for optional foreign keys (e.g. `franchiseId` on elections).
+- Use `selectedEntityIdSchema("…")` for required dropdowns.
+
+## Backend
+
+- **Supabase data layer** (`lib/supabase/*`): keep using `isUuid()` for Postgres lookups — legacy Mongo ids will not match rows until data is migrated.
+- **Controllers / validation**: use `isEntityId()` so production Mongo ids are accepted on the wire.
+
+API responses expose both `_id` and `id`. Never `parseInt()` on entity IDs.

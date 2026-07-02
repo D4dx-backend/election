@@ -1,6 +1,7 @@
 const { getSupabase } = require("../../config/supabase");
 const { mapFranchise, franchiseToRow } = require("./map");
 const { isUuid } = require("./users");
+const { deleteFranchiseCascade } = require("./deleteFranchiseCascade");
 
 async function create(data) {
   const supabase = getSupabase();
@@ -32,7 +33,15 @@ async function findByName(name) {
 async function updateById(id, data) {
   if (!isUuid(id)) return null;
   const supabase = getSupabase();
-  const row = franchiseToRow(data);
+
+  const { data: existing, error: findError } = await supabase
+    .from("franchises")
+    .select("settings")
+    .eq("id", id)
+    .maybeSingle();
+  if (findError) throw findError;
+
+  const row = franchiseToRow(data, existing?.settings || {});
 
   const { data: updated, error } = await supabase
     .from("franchises")
@@ -49,10 +58,8 @@ async function deleteById(id) {
   const franchise = await findById(id);
   if (!franchise) return null;
 
-  const supabase = getSupabase();
-  const { error } = await supabase.from("franchises").delete().eq("id", id);
-  if (error) throw error;
-  return franchise;
+  const cascadeDeleted = await deleteFranchiseCascade(id);
+  return { franchise, cascadeDeleted };
 }
 
 async function countDocuments() {
@@ -84,9 +91,11 @@ async function findAll({ page, limit, franchiseId } = {}) {
 
 async function findLean() {
   const supabase = getSupabase();
-  const { data, error } = await supabase.from("franchises").select("id, name");
+  const { data, error } = await supabase
+    .from("franchises")
+    .select("id, name, settings, logo_url, logo_alt, status, created_at, updated_at");
   if (error) throw error;
-  return (data || []).map((r) => ({ _id: r.id, id: r.id, name: r.name }));
+  return (data || []).map(mapFranchise);
 }
 
 module.exports = {

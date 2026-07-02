@@ -1,7 +1,8 @@
 const nominees = require("../lib/supabase/nominees");
-const elections = require("../lib/supabase/elections");
-const { logUserActivity } = require("../utils/auditLog");
+const elections = require("../lib/elections");
+const { logUserActivity, logAuditFromReq } = require("../utils/auditLog");
 const { denyUnlessCanAccessElection } = require("../lib/electionAccess");
+const { canAccessElection } = require("../lib/electionAccess");
 const { uploadPhotoFromBase64 } = require("../lib/photoUpload");
 
 async function resolveNomineeElectionScope(user) {
@@ -61,6 +62,20 @@ async function buildNomineePayload(req) {
   return payload;
 }
 
+async function assertNomineeAccess(req, nominee) {
+  const election = await elections.findById(nominee.electionId);
+  if (!election) {
+    const err = new Error("Election not found for nominee.");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (!(await canAccessElection(req.user, election))) {
+    const err = new Error("You are not allowed to access this nominee.");
+    err.statusCode = 403;
+    throw err;
+  }
+}
+
 exports.addNominee = async (req, res) => {
   try {
     const payload = await buildNomineePayload(req);
@@ -97,6 +112,14 @@ exports.bulkAddNominees = async (req, res) => {
       status: n.status || "active",
       electionId: n.electionId || electionId,
     }));
+    const electionIds = [...new Set(docs.map((d) => String(d.electionId || "")).filter(Boolean))];
+    for (const eid of electionIds) {
+      const election = await elections.findById(eid);
+      if (!election) {
+        return res.status(400).json({ success: false, message: `Election not found: ${eid}` });
+      }
+      if (await denyUnlessCanAccessElection(req, res, election)) return;
+    }
     const created = await nominees.insertMany(docs);
     await logUserActivity(req.user._id, req.ip, "Created", `${created.length} nominees`, "Nominee");
     res.status(201).json({ success: true, message: "Nominees created.", count: created.length, data: created });
@@ -124,6 +147,7 @@ exports.getNomineeById = async (req, res) => {
   try {
     const nominee = await nominees.findById(req.params.id);
     if (!nominee) return res.status(404).json({ success: false, message: "Nominee not found." });
+    await assertNomineeAccess(req, nominee);
     res.status(200).json({ success: true, data: nominee });
   } catch (err) {
     console.error(err);
@@ -133,8 +157,12 @@ exports.getNomineeById = async (req, res) => {
 
 exports.updateNomineeById = async (req, res) => {
   try {
+    const existing = await nominees.findById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, message: "Nominee not found." });
+    await assertNomineeAccess(req, existing);
     const nominee = await nominees.updateById(req.params.id, await buildNomineePayload(req));
     if (!nominee) return res.status(404).json({ success: false, message: "Nominee not found." });
+    await logAuditFromReq(req, "Updated", nominee.name, "Nominee", nominee._id || nominee.id);
     res.status(200).json({ success: true, data: nominee });
   } catch (err) {
     console.error(err);
@@ -144,8 +172,12 @@ exports.updateNomineeById = async (req, res) => {
 
 exports.deleteNomineeById = async (req, res) => {
   try {
+    const existing = await nominees.findById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, message: "Nominee not found." });
+    await assertNomineeAccess(req, existing);
     const nominee = await nominees.deleteById(req.params.id);
     if (!nominee) return res.status(404).json({ success: false, message: "Nominee not found." });
+    await logAuditFromReq(req, "Deleted", nominee.name, "Nominee", nominee._id || nominee.id);
     res.status(200).json({ success: true, message: "Nominee deleted." });
   } catch (err) {
     console.error(err);
@@ -190,10 +222,16 @@ exports.getNominees = async (req, res) => {
 exports.updateNominee = async (req, res) => {
   try {
     const { id } = req.body;
+    const existing = await nominees.findById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Nominee not found." });
+    }
+    await assertNomineeAccess(req, existing);
     const nominee = await nominees.updateById(id, req.body);
     if (!nominee) {
       return res.status(404).json({ success: false, message: "Nominee not found." });
     }
+    await logAuditFromReq(req, "Updated", nominee.name, "Nominee", nominee._id || nominee.id);
     res.status(200).json({ success: true, data: nominee });
   } catch (err) {
     console.error(err);
@@ -204,10 +242,16 @@ exports.updateNominee = async (req, res) => {
 exports.deleteNominee = async (req, res) => {
   try {
     const { id } = req.query;
+    const existing = await nominees.findById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Nominee not found." });
+    }
+    await assertNomineeAccess(req, existing);
     const nominee = await nominees.deleteById(id);
     if (!nominee) {
       return res.status(404).json({ success: false, message: "Nominee not found." });
     }
+    await logAuditFromReq(req, "Deleted", nominee.name, "Nominee", nominee._id || nominee.id);
     res.status(200).json({ success: true, message: "Nominee deleted." });
   } catch (err) {
     console.error(err);
