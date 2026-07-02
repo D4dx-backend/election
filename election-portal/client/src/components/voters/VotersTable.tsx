@@ -154,6 +154,25 @@ export function VotersTable({
   return (
     <Card>
       <CardContent className="p-0">
+        {selectionMode && onToggleSelectAll && voters.length > 0 && (
+          <div className="flex items-center justify-between border-b px-4 py-2 md:hidden">
+            <button
+              type="button"
+              onClick={onToggleSelectAll}
+              className="inline-flex items-center gap-2 text-sm font-medium text-primary"
+              aria-label="Select all voters on this page"
+            >
+              <RowSelectCheckbox
+                checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                onCheckedChange={onToggleSelectAll}
+                onClick={(e) => e.stopPropagation()}
+                aria-label="Select all voters on this page"
+              />
+              <span>{allSelected ? "Clear selection" : "Select all on this page"}</span>
+            </button>
+            <span className="text-xs text-gray-500">{voters.length} shown</span>
+          </div>
+        )}
         <div className="divide-y divide-gray-100 md:hidden">
           {voters.length > 0 ? (
             voters.map((voter) => {

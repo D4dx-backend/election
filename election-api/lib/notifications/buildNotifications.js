@@ -1,4 +1,4 @@
-const elections = require("../supabase/elections");
+const elections = require("../elections");
 const votes = require("../supabase/votes");
 const users = require("../supabase/users");
 const nominees = require("../supabase/nominees");

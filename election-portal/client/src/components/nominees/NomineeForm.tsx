@@ -32,10 +32,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { User, Upload, FileSpreadsheet, List, UploadCloud } from 'lucide-react';
 
+import { selectedEntityIdSchema } from '@shared/entityId';
+
 // Form schema for single nominee
 const singleNomineeSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters' }),
-  electionId: z.string().min(1, { message: 'Please select an election' }),
+  electionId: selectedEntityIdSchema('Please select an election'),
   gender: z.enum(['male', 'female']).optional(),
   description: z.string().max(2000).optional(),
 });
@@ -43,13 +45,13 @@ const singleNomineeSchema = z.object({
 // Form schema for bulk nominees
 const bulkNomineeSchema = z.object({
   namesWithGender: z.string().min(2, { message: 'Please enter comma-separated nominee names with gender (e.g., John Doe-male, Jane Smith-female)' }),
-  electionId: z.string().min(1, { message: 'Please select an election' }),
+  electionId: selectedEntityIdSchema('Please select an election'),
 });
 
 // Form schema for import from previous election
 const importPreviousSchema = z.object({
-  sourceElectionId: z.string().min(1, { message: 'Please select a source election' }),
-  targetElectionId: z.string().min(1, { message: 'Please select a target election' }),
+  sourceElectionId: selectedEntityIdSchema('Please select a source election'),
+  targetElectionId: selectedEntityIdSchema('Please select a target election'),
 });
 
 type SingleNomineeFormValues = z.infer<typeof singleNomineeSchema>;
@@ -310,7 +312,7 @@ export function NomineeForm({
           // Fall through to JSON photo upload.
         }
 
-        // Compact data URL in JSON — works on Mongo production APIs (no multer required).
+        // Compact data URL in JSON when multipart upload is unavailable.
         try {
           const res = await apiRequest('PUT', `/api/nominees/${targetId}`, {
             name: data.name,

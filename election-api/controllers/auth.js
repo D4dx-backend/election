@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const users = require("../lib/supabase/users");
 const roles = require("../lib/roles");
+const { logUserActivity } = require("../utils/auditLog");
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "24h" });
@@ -45,6 +46,8 @@ exports.login = async (req, res) => {
     await users.updateById(user._id, { lastLogin: new Date().toISOString() });
 
     const token = generateToken(user._id.toString());
+
+    await logUserActivity(user._id, req.ip, "Logged in", user.username, "Auth", user._id);
 
     res.status(200).json({
       success: true,
@@ -116,6 +119,7 @@ exports.updateProfile = async (req, res) => {
     }
 
     const user = await users.updateById(userId, updates);
+    await logUserActivity(userId, req.ip, "Updated profile", user.username, "User", userId);
     res.status(200).json({
       success: true,
       message: "Profile updated successfully.",
@@ -162,6 +166,8 @@ exports.changePassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(String(newPassword), 10);
     await users.updateById(userId, { password: hashedPassword });
 
+    await logUserActivity(userId, req.ip, "Changed password", user.username, "User", userId);
+
     res.status(200).json({ success: true, message: "Password changed successfully." });
   } catch (err) {
     console.error(err);
@@ -204,6 +210,8 @@ exports.forgotPassword = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(String(newPassword), 10);
     await users.updateById(user._id, { password: hashedPassword });
+
+    await logUserActivity(user._id, req.ip, "Reset password via forgot flow", user.username, "User", user._id);
 
     res.status(200).json({
       success: true,

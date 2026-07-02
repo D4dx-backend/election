@@ -1,7 +1,10 @@
 import { z } from "zod";
+import { optionalEntityIdSchema } from "./entityId";
 
-/** Supabase UUID string (election-api also exposes as `_id` for API compatibility). */
+/** API entity id — Supabase UUID or legacy Mongo ObjectId (`_id` / `id`). */
 export type EntityId = string;
+
+export { isEntityId, isUuid, isLegacyMongoId, entityIdSchema, optionalEntityIdSchema, requiredEntityIdSchema, selectedEntityIdSchema } from "./entityId";
 
 export interface ApiEntity {
   _id?: EntityId;
@@ -30,11 +33,14 @@ export interface User extends ApiEntity {
 
 export interface Franchise extends ApiEntity {
   name: string;
+  websiteUrl?: string | null;
+  contactNumber?: string | null;
   logoUrl?: string | null;
   logoAlt?: string | null;
   createdAt?: string | Date | null;
   updatedAt?: string | Date | null;
   status?: string | null;
+  settings?: Record<string, unknown> | null;
   defaultNomineeDisplayOrder?: string | null;
   defaultMaxVoters?: number | null;
   defaultMaxNominees?: number | null;
@@ -131,7 +137,7 @@ export interface ElectionAnalytic extends ApiEntity {
 }
 
 export const insertElectionSchema = z.object({
-  franchiseId: z.string().uuid().optional(),
+  franchiseId: optionalEntityIdSchema,
   organization: z.string().min(1, "Organization is required"),
   electionDate: z.union([z.string(), z.date()]),
   numberToBeElected: z.number().int().min(1),

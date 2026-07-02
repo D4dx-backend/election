@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ElectionForm } from "@/components/elections/ElectionForm";
 import { useToast } from "@/hooks/use-toast";
+import { buildElectionSubmitPayload } from "@/lib/electionHelpers";
 import { queryClient } from "@/lib/queryClient";
 
 export default function CreateElection() {
@@ -31,16 +32,16 @@ export default function CreateElection() {
 
   const handleSubmit = async (formData: Record<string, unknown>) => {
     try {
-      const { logoFile, ...submitData } = formData;
+      const { payload, logoFile } = buildElectionSubmitPayload(formData);
 
       if (userRole === "franchise_admin" && franchiseId) {
-        submitData.franchiseId = franchiseId;
+        payload.franchiseId = franchiseId;
       }
 
       let response: Response;
-      if (logoFile instanceof File) {
+      if (logoFile) {
         const body = new FormData();
-        Object.entries(submitData).forEach(([key, value]) => {
+        Object.entries(payload).forEach(([key, value]) => {
           if (value !== undefined && value !== null) body.append(key, String(value));
         });
         body.append("logo", logoFile);
@@ -56,7 +57,7 @@ export default function CreateElection() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${localStorage.getItem("authToken")}`,
           },
-          body: JSON.stringify(submitData),
+          body: JSON.stringify(payload),
         });
       }
 

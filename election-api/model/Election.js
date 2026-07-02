@@ -31,17 +31,23 @@ const ElectionSchema = new mongoose.Schema(
       enum: ["none", "result_only", "percentage", "score", "full"],
       default: "full",
     },
+    adminVotingDetailsEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    manualWinnerSelection: {
+      type: Boolean,
+      default: false,
+    },
+    manualWinnerIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Nominee",
+      },
+    ],
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
-    updatedAt: {
-      type: Date,
-      default: Date.now,
     },
     status: {
       type: String,
@@ -59,4 +65,4 @@ const ElectionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Election", ElectionSchema);
+module.exports = mongoose.models.Election || mongoose.model("Election", ElectionSchema);

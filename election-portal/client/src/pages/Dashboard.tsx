@@ -165,7 +165,7 @@ export default function Dashboard() {
           </Alert>
         )}
 
-        {user?.role === "super_admin" && (
+        {(user?.role === "super_admin" || user?.role === "franchise_admin") && (
           <div className="mt-6">
             {statsLoading ? (
               <Skeleton className="h-64 w-full" />

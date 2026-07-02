@@ -57,12 +57,14 @@ import { PaginationControls } from "@/components/ui/pagination-controls";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Pagination } from "@/lib/types";
 
+import { entityIdSchema, selectedEntityIdSchema } from "@shared/entityId";
+
 // Schema for franchise admin creation
 const franchiseAdminSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   fullName: z.string().optional().or(z.literal("")),
-  franchiseId: z.string().min(1, "Please select a franchise")
+  franchiseId: selectedEntityIdSchema("Please select a franchise")
 });
 
 // Schema for election admin creation
@@ -70,8 +72,8 @@ const electionAdminSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   fullName: z.string().optional().or(z.literal("")),
-  franchiseId: z.string().min(1, "Please select a franchise"),
-  electionAccess: z.array(z.string()).min(1, "Please select at least one election")
+  franchiseId: selectedEntityIdSchema("Please select a franchise"),
+  electionAccess: z.array(entityIdSchema).min(1, "Please select at least one election")
 });
 
 type FranchiseAdminFormValues = z.infer<typeof franchiseAdminSchema>;
@@ -108,6 +110,10 @@ interface FranchiseAdminUser {
   franchiseDetails?: { _id?: string; name?: string };
 }
 
+function isUserActive(status?: string | null): boolean {
+  return String(status || "active").trim().toLowerCase() === "active";
+}
+
 function resolveFranchiseName(
   admin: Pick<FranchiseAdminUser, "franchiseId" | "franchiseDetails">,
   franchises: AdminFranchiseOption[]
@@ -138,6 +144,10 @@ export default function Admins() {
   const [franchiseAdminsPage, setFranchiseAdminsPage] = useState(1);
   const [pendingDeleteAdminId, setPendingDeleteAdminId] = useState<string | null>(null);
   const [pendingDeleteAdminName, setPendingDeleteAdminName] = useState('');
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetTargetAdminId, setResetTargetAdminId] = useState<string | null>(null);
+  const [resetTargetAdminName, setResetTargetAdminName] = useState('');
+  const [resetPasswordInput, setResetPasswordInput] = useState('');
   const franchiseAdminsPageSize = 10;
   
   // --- Fetch data ---
@@ -329,6 +339,13 @@ export default function Admins() {
   const handleDeleteAdminClick = (admin: FranchiseAdminUser) => {
     setPendingDeleteAdminId(admin._id);
     setPendingDeleteAdminName(admin.username);
+  };
+
+  const handleOpenResetDialog = (admin: FranchiseAdminUser) => {
+    setResetTargetAdminId(admin._id);
+    setResetTargetAdminName(admin.username);
+    setResetPasswordInput("");
+    setResetDialogOpen(true);
   };
   
   useEffect(() => {
@@ -677,14 +694,14 @@ export default function Admins() {
                           <p className="text-sm text-gray-500 truncate">{admin.fullName || '-'}</p>
                         </div>
                         <Badge
-                          variant={admin.status === 'active' ? 'outline' : 'secondary'}
+                          variant={isUserActive(admin.status) ? 'outline' : 'secondary'}
                           className={
-                            admin.status === 'active' 
+                            isUserActive(admin.status)
                               ? 'bg-green-100 text-green-800 hover:bg-green-100' 
                               : 'bg-gray-100 text-gray-800 hover:bg-primary/10'
                           }
                         >
-                          {admin.status === 'active' ? 'Active' : 'Inactive'}
+                          {isUserActive(admin.status) ? 'Active' : 'Inactive'}
                         </Badge>
                       </div>
                       <div className="rounded-md bg-white p-3 text-sm">
@@ -695,18 +712,7 @@ export default function Admins() {
                       <Button 
                         variant="ghost"
                         size="sm"
-                        onClick={() => {
-                          const newPassword = prompt("Enter new password (minimum 6 characters):");
-                          if (newPassword && newPassword.length >= 6) {
-                            resetPasswordMutation.mutate({ id: admin._id, password: newPassword });
-                          } else if (newPassword) {
-                            toast({
-                              title: "Invalid password",
-                              description: "Password must be at least 6 characters",
-                              variant: "destructive"
-                            });
-                          }
-                        }}
+                        onClick={() => handleOpenResetDialog(admin)}
                       >
                         Reset Password
                       </Button>
@@ -746,32 +752,21 @@ export default function Admins() {
                           </TableCell>
                           <TableCell>
                             <Badge
-                              variant={admin.status === 'active' ? 'outline' : 'secondary'}
+                              variant={isUserActive(admin.status) ? 'outline' : 'secondary'}
                               className={
-                                admin.status === 'active' 
+                                isUserActive(admin.status)
                                   ? 'bg-green-100 text-green-800 hover:bg-green-100' 
                                   : 'bg-gray-100 text-gray-800 hover:bg-primary/10'
                               }
                             >
-                              {admin.status === 'active' ? 'Active' : 'Inactive'}
+                              {isUserActive(admin.status) ? 'Active' : 'Inactive'}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
                             <Button 
                               variant="link" 
-                              onClick={() => {
-                                const newPassword = prompt("Enter new password (minimum 6 characters):");
-                                if (newPassword && newPassword.length >= 6) {
-                                  resetPasswordMutation.mutate({ id: admin._id, password: newPassword });
-                                } else if (newPassword) {
-                                  toast({
-                                    title: "Invalid password",
-                                    description: "Password must be at least 6 characters",
-                                    variant: "destructive"
-                                  });
-                                }
-                              }}
+                              onClick={() => handleOpenResetDialog(admin)}
                             >
                               Reset Password
                             </Button>
@@ -854,6 +849,75 @@ export default function Admins() {
         }
         confirmText="Delete"
       />
+
+      <Dialog
+        open={resetDialogOpen}
+        onOpenChange={(open) => {
+          setResetDialogOpen(open);
+          if (!open) {
+            setResetTargetAdminId(null);
+            setResetTargetAdminName('');
+            setResetPasswordInput('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset administrator password</DialogTitle>
+            <DialogDescription>
+              {resetTargetAdminName
+                ? `Set a new password for "${resetTargetAdminName}".`
+                : "Set a new password for this administrator."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <FormLabel htmlFor="reset-admin-password">New password</FormLabel>
+            <Input
+              id="reset-admin-password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="Minimum 6 characters"
+              value={resetPasswordInput}
+              onChange={(e) => setResetPasswordInput(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Use at least 6 characters.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setResetDialogOpen(false)}
+              disabled={resetPasswordMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={resetPasswordMutation.isPending || !resetTargetAdminId || resetPasswordInput.length < 6}
+              onClick={() => {
+                if (!resetTargetAdminId) return;
+                resetPasswordMutation.mutate(
+                  { id: resetTargetAdminId, password: resetPasswordInput },
+                  {
+                    onSuccess: () => {
+                      setResetDialogOpen(false);
+                      setResetTargetAdminId(null);
+                      setResetTargetAdminName('');
+                      setResetPasswordInput('');
+                    },
+                  }
+                );
+              }}
+            >
+              {resetPasswordMutation.isPending ? "Resetting..." : "Reset password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

@@ -1,26 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { Button } from '@/components/ui/button';
-import { getElectionLabel } from '@/lib/electionHelpers';
 import {
   AlertCircle,
   CheckCircle2,
-  Calendar,
-  Users,
-  ChevronRight,
+  Clock,
   Info,
   Vote,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import VoterLayout from '@/components/layouts/VoterLayout';
-import { useToast } from '@/hooks/use-toast';
+import { PageContent } from '@/components/layout/PageContent';
+import { StatCard } from '@/components/dashboard/StatCard';
+import { VoterElectionList } from '@/components/voting/VoterElectionList';
 
 export default function VotingPortal() {
   const [, setLocation] = useLocation();
   const [votingStatus, setVotingStatus] = useState<Record<string, string>>({});
   const [availableElections, setAvailableElections] = useState<any[]>([]);
-  const { toast } = useToast();
 
   const {
     data: electionsData,
@@ -54,14 +51,6 @@ export default function VotingPortal() {
     }
   }, [voterStatusData]);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
   const handleElectionClick = (electionId: string) => {
     if (votingStatus[electionId] === 'voted') {
       setLocation(`/results/${electionId}`);
@@ -82,165 +71,109 @@ export default function VotingPortal() {
       return localStorage.getItem('userFullName') || '';
     })();
 
-  // ── Loading ──
+  const stats = useMemo(() => {
+    const total = availableElections.length;
+    const voted = availableElections.filter((e) => {
+      const id = e._id || e.id;
+      return id && votingStatus[String(id)] === 'voted';
+    }).length;
+    const pending = Math.max(total - voted, 0);
+    return { total, voted, pending };
+  }, [availableElections, votingStatus]);
+
   if (isLoadingElections || isLoadingStatus) {
     return (
       <VoterLayout title="My Elections">
-        <div className="px-4 pt-5 space-y-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="rounded-2xl overflow-hidden border border-gray-200 bg-white">
-              <Skeleton className="h-32 w-full" />
-              <div className="p-4 space-y-3">
-                <Skeleton className="h-5 w-3/4" />
-                <Skeleton className="h-4 w-1/2" />
-                <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-11 w-full rounded-xl" />
-              </div>
-            </div>
-          ))}
-        </div>
+        <PageContent className="px-4 sm:px-6 py-4 max-w-3xl mx-auto w-full space-y-4">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-4 w-64" />
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-20 rounded-lg" />
+            ))}
+          </div>
+          <Skeleton className="h-64 w-full rounded-lg" />
+        </PageContent>
       </VoterLayout>
     );
   }
 
-  // ── Error ──
   if (isElectionsError || isStatusError) {
     return (
       <VoterLayout title="My Elections">
-        <div className="px-4 pt-5">
-          <div className="flex items-start gap-3 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800">
+        <PageContent className="px-4 sm:px-6 py-4 max-w-3xl mx-auto w-full">
+          <div className="flex items-start gap-3 p-4 rounded-lg bg-red-50 border border-red-200 text-red-800">
             <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-semibold text-sm">Failed to load elections</p>
               <p className="text-xs mt-0.5 text-red-600">Please check your connection and try again.</p>
             </div>
           </div>
-        </div>
+        </PageContent>
       </VoterLayout>
     );
   }
 
-  const votedCount = availableElections.filter(
-    (e) => votingStatus[e._id] === 'voted',
-  ).length;
-
   return (
     <VoterLayout title="My Elections">
-      <div className="px-4 pt-5 pb-4 max-w-lg mx-auto">
-        {/* ── Welcome strip ── */}
-        <div className="mb-5">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-            Hi, {userFullName || 'Voter'} 👋
+      <PageContent className="px-4 sm:px-6 py-4 max-w-3xl mx-auto w-full">
+        <div className="mb-4">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
+            Hi, {userFullName || 'Voter'}
           </h1>
-          {availableElections.length > 0 && (
-            <p className="text-sm text-gray-500 mt-0.5">
-              {votedCount}/{availableElections.length} election{availableElections.length !== 1 ? 's' : ''} completed
-            </p>
-          )}
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+            {stats.total > 0
+              ? `${stats.voted} of ${stats.total} election${stats.total !== 1 ? 's' : ''} completed`
+              : 'No elections assigned yet'}
+          </p>
         </div>
 
-        {/* ── Election cards ── */}
-        {availableElections.length > 0 ? (
-          <div className="space-y-4">
-            {availableElections.map((election: any) => {
-              const voted = votingStatus[election._id] === 'voted';
-              return (
-                <button
-                  key={election._id}
-                  type="button"
-                  className="w-full text-left"
-                  onClick={() => handleElectionClick(election._id)}
-                >
-                  <div
-                    className={`
-                      rounded-2xl overflow-hidden border-2 bg-white dark:bg-gray-800
-                      active:scale-[0.98] transition-transform duration-100
-                      ${voted
-                        ? 'border-blue-200 dark:border-blue-700'
-                        : 'border-green-300 dark:border-green-700 shadow-sm shadow-green-100'
-                      }
-                    `}
-                  >
-                    {/* Election banner image */}
-                    {election.logo?.url && (
-                      <div className="w-full h-36 bg-gray-100 dark:bg-gray-700">
-                        <img
-                          src={election.logo.url}
-                          alt={election.logo.alt || getElectionLabel(election)}
-                          className="w-full h-full object-contain"
-                        />
-                      </div>
-                    )}
-
-                    {/* Card body */}
-                    <div className="p-4">
-                      {/* Status pill */}
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div className="flex-1 min-w-0">
-                          <h2 className="font-bold text-base leading-snug text-gray-900 dark:text-white">
-                            {getElectionLabel(election)}
-                          </h2>
-                        </div>
-                        {voted ? (
-                          <span className="flex-shrink-0 flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300 px-2.5 py-1 rounded-full">
-                            <CheckCircle2 className="h-3 w-3" />
-                            Voted
-                          </span>
-                        ) : (
-                          <span className="flex-shrink-0 text-xs font-bold text-green-700 bg-green-100 dark:bg-green-900/40 dark:text-green-300 px-2.5 py-1 rounded-full">
-                            Open
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Meta info row */}
-                      <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 mb-4">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3.5 w-3.5" />
-                          {formatDate(election.electionDate)}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Users className="h-3.5 w-3.5" />
-                          Select {election.numberToBeElected} position{election.numberToBeElected !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-
-                      {/* CTA */}
-                      <div
-                        className={`
-                          w-full h-11 rounded-xl flex items-center justify-center gap-2
-                          text-sm font-semibold transition-colors
-                          ${voted
-                            ? 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-700'
-                            : 'bg-primary text-white'
-                          }
-                        `}
-                      >
-                        <Vote className="h-4 w-4" />
-                        {voted ? 'View My Vote' : 'Cast Vote'}
-                        <ChevronRight className="h-4 w-4 ml-auto" />
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
+        {stats.total > 0 && (
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
+            <StatCard
+              title="Total elections"
+              value={stats.total}
+              icon={<Vote className="h-full w-full" />}
+              iconBgColor="bg-primary/10"
+              iconColor="text-primary"
+            />
+            <StatCard
+              title="Awaiting vote"
+              value={stats.pending}
+              icon={<Clock className="h-full w-full" />}
+              iconBgColor="bg-amber-100"
+              iconColor="text-amber-600"
+            />
+            <StatCard
+              title="Completed"
+              value={stats.voted}
+              icon={<CheckCircle2 className="h-full w-full" />}
+              iconBgColor="bg-blue-100"
+              iconColor="text-blue-600"
+            />
           </div>
+        )}
+
+        {availableElections.length > 0 ? (
+          <VoterElectionList
+            elections={availableElections}
+            votingStatus={votingStatus}
+            onElectionClick={handleElectionClick}
+          />
         ) : (
-          /* ── Empty state ── */
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-4">
-              <Info className="h-9 w-9 text-gray-400" />
+          <div className="flex flex-col items-center justify-center py-12 text-center rounded-lg border border-dashed border-gray-200 bg-gray-50/80">
+            <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+              <Info className="h-7 w-7 text-gray-400" />
             </div>
-            <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-1">
-              No Elections Yet
+            <h2 className="text-base font-semibold text-gray-800 dark:text-white mb-1">
+              No elections yet
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 max-w-xs">
-              You have no elections available for voting right now. Check back soon.
+              When an admin assigns you to an election, it will appear here.
             </p>
           </div>
         )}
-      </div>
+      </PageContent>
     </VoterLayout>
   );
 }

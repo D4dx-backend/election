@@ -1,5 +1,5 @@
 const { getSupabase } = require("../../config/supabase");
-const elections = require("../supabase/elections");
+const elections = require("../elections");
 const users = require("../supabase/users");
 const votes = require("../supabase/votes");
 const { isEmailConfigured, sendMail } = require("../email");

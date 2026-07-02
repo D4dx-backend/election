@@ -32,6 +32,7 @@ interface Franchise {
   };
   websiteUrl?: string;
   contactNumber?: string;
+  settings?: Record<string, unknown>;
   status: 'active' | 'inactive';
   createdAt: string;
 }
@@ -55,6 +56,17 @@ interface AdminFormData {
   fullName: string;
   password: string;
   franchiseId: string;
+}
+
+function resolveFranchiseContact(franchise: Franchise) {
+  const settings = (franchise.settings ?? {}) as {
+    websiteUrl?: string;
+    contactNumber?: string;
+  };
+  return {
+    websiteUrl: franchise.websiteUrl || settings.websiteUrl || "",
+    contactNumber: franchise.contactNumber || settings.contactNumber || "",
+  };
 }
 
 export default function Franchises() {
@@ -161,6 +173,7 @@ export default function Franchises() {
       setPendingDeleteFranchiseIds(null);
       franchiseSelection.exitDeleteMode();
       queryClient.invalidateQueries({ queryKey: ["/api/franchises"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/audit-logs"] });
       toast({
         title: ids.length === 1 ? "Franchise deleted" : "Franchises deleted",
         description:
@@ -407,11 +420,15 @@ export default function Franchises() {
   };
   
   const handleEditFranchise = (franchise: Franchise) => {
+    const settings =
+      franchise.settings && typeof franchise.settings === "object"
+        ? (franchise.settings as { websiteUrl?: string; contactNumber?: string })
+        : {};
     setEditFormData({
       id: franchise._id,
       name: franchise.name,
-      websiteUrl: franchise.websiteUrl || "",
-      contactNumber: franchise.contactNumber || "",
+      websiteUrl: franchise.websiteUrl || settings.websiteUrl || "",
+      contactNumber: franchise.contactNumber || settings.contactNumber || "",
       status: franchise.status
     });
     setIsEditDialogOpen(true);
@@ -935,7 +952,9 @@ export default function Franchises() {
                     />
                   </div>
                   <div className="divide-y divide-gray-100 md:hidden">
-                    {franchises.map((franchise: Franchise) => (
+                    {franchises.map((franchise: Franchise) => {
+                      const contact = resolveFranchiseContact(franchise);
+                      return (
                       <div key={franchise._id} className="p-4 space-y-4">
                         <div className="flex items-start justify-between gap-3">
                           {franchiseSelection.showSelectors && (
@@ -971,9 +990,9 @@ export default function Franchises() {
                         <div className="grid gap-3 rounded-md bg-white p-3 text-sm">
                           <div>
                             <p className="text-xs text-gray-500">Website</p>
-                            {franchise.websiteUrl ? (
+                            {contact.websiteUrl ? (
                               <a
-                                href={franchise.websiteUrl}
+                                href={contact.websiteUrl.startsWith("http") ? contact.websiteUrl : `https://${contact.websiteUrl}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center font-medium text-blue-600 hover:underline"
@@ -986,9 +1005,9 @@ export default function Franchises() {
                           </div>
                           <div>
                             <p className="text-xs text-gray-500">Contact</p>
-                            {franchise.contactNumber ? (
+                            {contact.contactNumber ? (
                               <p className="inline-flex items-center font-medium text-gray-900">
-                                <Phone className="h-4 w-4 mr-1" /> {franchise.contactNumber}
+                                <Phone className="h-4 w-4 mr-1" /> {contact.contactNumber}
                               </p>
                             ) : (
                               <p className="text-gray-400">Not available</p>
@@ -1021,7 +1040,8 @@ export default function Franchises() {
                           )}
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
                   <div className="hidden md:block">
                   <Table>
@@ -1051,7 +1071,9 @@ export default function Franchises() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {franchises.map((franchise: Franchise) => (
+                      {franchises.map((franchise: Franchise) => {
+                        const contact = resolveFranchiseContact(franchise);
+                        return (
                         <TableRow key={franchise._id}>
                           {franchiseSelection.showSelectors && (
                           <TableCell className="w-7 px-1">
@@ -1079,9 +1101,9 @@ export default function Franchises() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {franchise.websiteUrl ? (
+                            {contact.websiteUrl ? (
                               <a 
-                                href={franchise.websiteUrl} 
+                                href={contact.websiteUrl.startsWith("http") ? contact.websiteUrl : `https://${contact.websiteUrl}`}
                                 target="_blank" 
                                 rel="noopener noreferrer"
                                 className="flex items-center text-blue-600 hover:underline"
@@ -1094,10 +1116,10 @@ export default function Franchises() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {franchise.contactNumber ? (
+                            {contact.contactNumber ? (
                               <div className="flex items-center">
                                 <Phone className="h-4 w-4 mr-1" />
-                                {franchise.contactNumber}
+                                {contact.contactNumber}
                               </div>
                             ) : (
                               <span className="text-gray-400">Not available</span>
@@ -1148,7 +1170,8 @@ export default function Franchises() {
                             </div>
                           </TableCell>
                         </TableRow>
-                      ))}
+                      );
+                      })}
                     </TableBody>
                   </Table>
                   </div>

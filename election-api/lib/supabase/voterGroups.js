@@ -206,9 +206,10 @@ async function countDocuments() {
   return count || 0;
 }
 
-async function findAll({ page, limit, populateElections = true } = {}) {
+async function findAll({ page, limit, populateElections = true, franchiseId } = {}) {
   const supabase = getSupabase();
   let query = supabase.from("voter_groups").select("*", { count: page !== undefined ? "exact" : undefined });
+  if (franchiseId) query = query.eq("franchise_id", franchiseId);
 
   if (page !== undefined) {
     const pageNum = Math.max(page, 1);

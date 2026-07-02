@@ -52,26 +52,35 @@ async function findById(id, { populateUser: pop = true } = {}) {
   return mapAuditLog(data, user);
 }
 
-async function findAll({ page = 1, limit = 10 } = {}) {
+async function findAll({ page = 1, limit = 10, userIds } = {}) {
   const supabase = getSupabase();
+  const scopedUserIds = Array.isArray(userIds)
+    ? [...new Set(userIds.map((id) => String(id)).filter((id) => isUuid(id)))]
+    : null;
+  if (scopedUserIds && scopedUserIds.length === 0) {
+    return { logs: [], total: 0 };
+  }
   const pageNum = Math.max(page, 1);
   const pageSize = Math.max(limit, 1);
   const from = (pageNum - 1) * pageSize;
 
-  const { data, count, error } = await supabase
+  let query = supabase
     .from("audit_logs")
     .select("*", { count: "exact" })
     .order("created_at", { ascending: false })
     .range(from, from + pageSize - 1);
+  if (scopedUserIds) query = query.in("user_id", scopedUserIds);
+
+  const { data, count, error } = await query;
   if (error) throw error;
 
-  const userIds = [...new Set((data || []).map((r) => r.user_id).filter(Boolean))];
+  const logUserIds = [...new Set((data || []).map((r) => r.user_id).filter(Boolean))];
   let userMap = {};
-  if (userIds.length) {
+  if (logUserIds.length) {
     const { data: users, error: uErr } = await supabase
       .from("users")
       .select("id, username, full_name, email")
-      .in("id", userIds);
+      .in("id", logUserIds);
     if (uErr) throw uErr;
     (users || []).forEach((u) => {
       userMap[u.id] = {

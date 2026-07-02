@@ -1,13 +1,31 @@
 const electionGroups = require("../lib/supabase/electionGroups");
-const { logUserActivity } = require("../utils/auditLog");
+const { logUserActivity, logAuditFromReq } = require("../utils/auditLog");
+const { resolveFranchiseIdForActor, sameFranchise } = require("../lib/roles");
+
+function resolveGroupFranchiseId(group) {
+  if (!group?.franchiseId) return "";
+  const src = group.franchiseId;
+  if (typeof src === "object" && src !== null) {
+    return String(src._id || src.id || "");
+  }
+  return String(src);
+}
+
+function assertElectionGroupAccess(user, group) {
+  if (!group) return;
+  if (user?.role === "super_admin") return;
+  if (!sameFranchise(user?.franchiseId, resolveGroupFranchiseId(group))) {
+    const err = new Error("You are not allowed to access this election group.");
+    err.statusCode = 403;
+    throw err;
+  }
+}
 
 exports.addElectionGroup = async (req, res) => {
   try {
     const body = { ...req.body };
     const user = req.user || {};
-    if (!body.franchiseId && user.franchiseId) {
-      body.franchiseId = user.franchiseId;
-    }
+    body.franchiseId = resolveFranchiseIdForActor(user, body.franchiseId);
     if (!body.createdBy && user._id) {
       body.createdBy = user._id;
     }
@@ -24,6 +42,7 @@ exports.getElectionGroupById = async (req, res) => {
   try {
     const eg = await electionGroups.findById(req.params.id);
     if (!eg) return res.status(404).json({ success: false, message: "Election Group not found." });
+    assertElectionGroupAccess(req.user, eg);
     res.status(200).json({ success: true, data: eg });
   } catch (err) {
     console.error(err);
@@ -33,8 +52,12 @@ exports.getElectionGroupById = async (req, res) => {
 
 exports.updateElectionGroupById = async (req, res) => {
   try {
+    const existing = await electionGroups.findById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, message: "Election Group not found." });
+    assertElectionGroupAccess(req.user, existing);
     const eg = await electionGroups.updateById(req.params.id, req.body);
     if (!eg) return res.status(404).json({ success: false, message: "Election Group not found." });
+    await logAuditFromReq(req, "Updated", eg.name, "Election Group", eg._id || eg.id);
     res.status(200).json({ success: true, data: eg });
   } catch (err) {
     console.error(err);
@@ -44,8 +67,12 @@ exports.updateElectionGroupById = async (req, res) => {
 
 exports.deleteElectionGroupById = async (req, res) => {
   try {
+    const existing = await electionGroups.findById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, message: "Election Group not found." });
+    assertElectionGroupAccess(req.user, existing);
     const eg = await electionGroups.deleteById(req.params.id);
     if (!eg) return res.status(404).json({ success: false, message: "Election Group not found." });
+    await logAuditFromReq(req, "Deleted", eg.name, "Election Group", eg._id || eg.id);
     res.status(200).json({ success: true, message: "Election Group deleted." });
   } catch (err) {
     console.error(err);
@@ -87,10 +114,16 @@ exports.getElectionGroups = async (req, res) => {
 exports.updateElectionGroup = async (req, res) => {
   try {
     const { id } = req.body;
+    const existing = await electionGroups.findById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Election Group not found." });
+    }
+    assertElectionGroupAccess(req.user, existing);
     const electionGroup = await electionGroups.updateById(id, req.body);
     if (!electionGroup) {
       return res.status(404).json({ success: false, message: "Election Group not found." });
     }
+    await logAuditFromReq(req, "Updated", electionGroup.name, "Election Group", electionGroup._id || electionGroup.id);
     res.status(200).json({ success: true, data: electionGroup });
   } catch (err) {
     console.error(err);
@@ -101,10 +134,16 @@ exports.updateElectionGroup = async (req, res) => {
 exports.deleteElectionGroup = async (req, res) => {
   try {
     const { id } = req.query;
+    const existing = await electionGroups.findById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Election Group not found." });
+    }
+    assertElectionGroupAccess(req.user, existing);
     const electionGroup = await electionGroups.deleteById(id);
     if (!electionGroup) {
       return res.status(404).json({ success: false, message: "Election Group not found." });
     }
+    await logAuditFromReq(req, "Deleted", electionGroup.name, "Election Group", electionGroup._id || electionGroup.id);
     res.status(200).json({ success: true, message: "Election Group deleted." });
   } catch (err) {
     console.error(err);

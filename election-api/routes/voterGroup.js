@@ -11,7 +11,6 @@ const {
   getGroupVoters,
   addVoterToGroup,
   generateVotersInGroup,
-  addExistingUsersToGroup,
 } = require("../controllers/voterGroup");
 const { protect, authorize } = require("../middleware/auth");
 
@@ -28,7 +27,6 @@ router.put("/:id/elections", protect, admin, assignElections);
 router.get("/:id/voters", protect, admin, getGroupVoters);
 router.post("/:id/voter", protect, admin, addVoterToGroup);
 router.post("/:id/generate", protect, admin, generateVotersInGroup);
-router.post("/:id/add-users", protect, admin, addExistingUsersToGroup);
 
 router
   .route("/:id")
